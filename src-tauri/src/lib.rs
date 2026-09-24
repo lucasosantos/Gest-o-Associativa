@@ -2,8 +2,10 @@ use std::fs;
 use std::path::Path;
 use tauri_plugin_sql::{Builder as SqlBuilder, Migration, MigrationKind};
 
+mod backup;
 mod config;
 mod documents;
+mod files;
 mod password;
 mod photos;
 
@@ -1416,6 +1418,21 @@ fn all_migrations() -> Vec<Migration> {
                 CHECK (dues_start_date IS NULL OR dues_start_date >= association_date);
         ",
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 23,
+        description: "carencia_para_voto",
+        // Pedido do usuário: tempo mínimo de filiação, em meses, pra o sócio
+        // entrar na lista de aptos a votar (`MemberModel.listarAptosAVotar`),
+        // contado a partir de `members.association_date`. Default `0` = sem
+        // carência — associação já em produção continua com a mesma lista
+        // de antes até alguém preencher o campo em "Instituição". Literal
+        // constante, então `ADD COLUMN ... DEFAULT` direto (sem o padrão de
+        // backfill + trigger de `.claude/rules/database.md`).
+        sql: "
+            ALTER TABLE associations ADD COLUMN voting_min_membership_months INTEGER NOT NULL DEFAULT 0
+                CHECK (voting_min_membership_months >= 0);
+        ",
+        kind: MigrationKind::Up,
     }]
 }
 
@@ -1458,6 +1475,11 @@ pub fn run() {
             documents::get_document_file_path,
             documents::read_document_file_as_data_url,
             photos::read_image_as_data_url,
+            files::read_text_file,
+            files::write_text_file,
+            backup::prepare_backup_snapshot,
+            backup::export_backup,
+            backup::import_backup,
         ])
         .run(tauri::generate_context!())
         .expect("erro ao rodar a aplicação tauri");

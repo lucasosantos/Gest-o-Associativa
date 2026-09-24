@@ -49,6 +49,12 @@ export interface Association {
    * manualmente fora dali.
    */
   next_registration_number: number;
+  /**
+   * Meses mínimos de filiação (a partir de `members.association_date`) pra o
+   * sócio aparecer na lista de aptos a votar — ver
+   * `MemberModel.listarAptosAVotar` (migration `version: 23`). `0` = sem carência.
+   */
+  voting_min_membership_months: number;
   /** JSON serializado manualmente — SQLite não tem tipo JSONB nativo. */
   settings: string;
   created_at: string;
@@ -69,6 +75,7 @@ export interface NovaAssociacao {
   membership_mode?: MembershipMode;
   /** SQLite não tem booleano nativo: 0 = manual, 1 = automática. */
   auto_registration_number?: 0 | 1;
+  voting_min_membership_months?: number;
 }
 
 export type AtualizacaoAssociacao = Partial<NovaAssociacao>;
@@ -100,8 +107,9 @@ export class AssociationModel {
     await db.execute(
       `INSERT INTO associations
          (id, legal_name, trade_name, cnpj, foundation_date, status, email, phone, website,
-          monthly_contribution_amount, monthly_contribution_due_day, membership_mode, auto_registration_number)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          monthly_contribution_amount, monthly_contribution_due_day, membership_mode, auto_registration_number,
+          voting_min_membership_months)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
       [
         id,
         dados.legal_name,
@@ -116,6 +124,7 @@ export class AssociationModel {
         dados.monthly_contribution_due_day ?? null,
         dados.membership_mode ?? "UNICO",
         dados.auto_registration_number ?? 0,
+        dados.voting_min_membership_months ?? 0,
       ]
     );
 

@@ -120,20 +120,6 @@ projeto para quem for contribuir está em [CLAUDE.md](CLAUDE.md).
 Não há scripts de `lint` nem de `test` — o projeto ainda não tem testes
 automatizados nem ESLint/Prettier configurados.
 
-### Publicando uma release
-
-O workflow [`.github/workflows/release.yml`](.github/workflows/release.yml)
-builda os instaladores de Windows e Linux e publica como GitHub Release
-(rascunho) sempre que uma tag `v*` é enviada ao repositório:
-
-```bash
-git tag v1.0.0
-git push origin v1.0.0
-```
-
-Depois é só revisar e publicar o rascunho da release na aba **Releases** do
-GitHub.
-
 ### Recommended IDE Setup
 
 - [VS Code](https://code.visualstudio.com/) + [Vue - Official](https://marketplace.visualstudio.com/items?itemName=Vue.volar) + [Tauri](https://marketplace.visualstudio.com/items?itemName=tauri-apps.tauri-vscode) + [rust-analyzer](https://marketplace.visualstudio.com/items?itemName=rust-lang.rust-analyzer)

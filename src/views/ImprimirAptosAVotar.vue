@@ -1,12 +1,12 @@
 <script setup lang="ts">
-// Lista de sócios aptos a votar (ex.: pauta de assembleia) — apto = situação
-// ATIVO e nenhuma mensalidade vencida (mensalidade em dia). Aberta pelo botão
+// Lista de sócios aptos a votar (ex.: pauta de assembleia) — a regra (ATIVO,
+// mensalidade em dia e carência mínima de filiação definida em "Instituição")
+// mora em `MemberModel.listarAptosAVotar`. Aberta pelo botão
 // da sidebar de Socios.vue; mesmo padrão das outras telas de impressão
 // (ImprimirLivroProtocolo.vue): abre já mandando pra impressão do sistema.
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { MemberModel, type MemberComPessoa } from "../models/Member.js";
-import { MembershipPaymentModel } from "../models/MembershipPayment.js";
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
@@ -18,6 +18,7 @@ const router = useRouter();
 const associacao = ref<Association | null>(null);
 const endereco = ref<Address | null>(null);
 const aptos = ref<MemberComPessoa[]>([]);
+const carenciaMeses = ref(0);
 const loading = ref(true);
 
 const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
@@ -29,17 +30,15 @@ function imprimir() {
 onMounted(async () => {
   try {
     const associationId = getCurrentAssociationId();
-    const [dadosAssociacao, dadosEndereco, todosSocios, inadimplentes] = await Promise.all([
+    const [dadosAssociacao, dadosEndereco, resultado] = await Promise.all([
       AssociationModel.get(associationId),
       AddressModel.primaryForAssociation(associationId),
-      MemberModel.list(),
-      MembershipPaymentModel.listarInadimplentesAtivos(),
+      MemberModel.listarAptosAVotar(),
     ]);
     associacao.value = dadosAssociacao;
     endereco.value = dadosEndereco;
-    aptos.value = todosSocios
-      .filter((socio) => socio.status === "ATIVO" && !inadimplentes.has(socio.id))
-      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+    aptos.value = resultado.aptos;
+    carenciaMeses.value = resultado.carenciaMeses;
   } finally {
     loading.value = false;
   }
@@ -63,7 +62,9 @@ onMounted(async () => {
         <PrintHeader v-if="associacao" :association="associacao" :address="endereco" />
         <h1>Sócios aptos a votar</h1>
         <p class="subtitulo">
-          Situação Ativo e mensalidade em dia · {{ aptos.length }} sócio(s)
+          Situação Ativo, mensalidade em dia<template v-if="carenciaMeses > 0">
+            e ao menos {{ carenciaMeses }} {{ carenciaMeses === 1 ? "mês" : "meses" }} de associado</template>
+          · {{ aptos.length }} sócio(s)
         </p>
         <p class="emissao">Emitido em {{ dataEmissao }}</p>
       </header>

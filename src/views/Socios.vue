@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
+import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { MemberModel, type MemberComPessoa } from "../models/Member.js";
 import { MembershipPaymentModel } from "../models/MembershipPayment.js";
-import { formatarData, formatarCpf } from "../utils/format.js";
+import { formatarData, formatarCpf, hojeIso } from "../utils/format.js";
 import { setSidebarTools } from "../composables/useSidebar.js";
 import { useAssociationScopedData } from "../composables/useAssociationScopedData.js";
+import { openModal } from "../composables/useModal.js";
+import { gerarCsvSocios } from "../services/memberCsv.js";
+import { writeTextFile } from "../services/files.js";
+import SocioImportForm from "../modals/SocioImportForm.vue";
 
 const router = useRouter();
 
@@ -14,6 +19,8 @@ const termoBusca = ref("");
 /** Filtro adicional, combinado com a busca — ver `MembershipPaymentModel.listarInadimplentes`. */
 const apenasInadimplentes = ref(false);
 const loading = ref(true);
+/** Retorno da última importação/exportação em CSV, mostrado acima da lista. */
+const mensagem = ref<{ tipo: "ok" | "erro"; texto: string } | null>(null);
 
 async function carregar() {
   loading.value = true;
@@ -46,6 +53,29 @@ function abrirAptosAVotar() {
   router.push({ name: "aptos-a-votar-imprimir" });
 }
 
+function abrirImportacao() {
+  mensagem.value = null;
+  openModal({ title: "Importar sócios (CSV)", component: SocioImportForm, props: { onSaved: carregar } });
+}
+
+/** Exporta TODOS os sócios (ignora busca/filtro da tela) no mesmo layout aceito pela importação. */
+async function exportarCsv() {
+  mensagem.value = null;
+  const destino = await saveDialog({
+    defaultPath: `socios-${hojeIso()}.csv`,
+    filters: [{ name: "Planilha CSV", extensions: ["csv"] }],
+  });
+  if (!destino) return;
+
+  try {
+    const { conteudo, total } = await gerarCsvSocios();
+    await writeTextFile(destino, conteudo);
+    mensagem.value = { tipo: "ok", texto: `${total} sócio(s) exportado(s) para ${destino}.` };
+  } catch (error) {
+    mensagem.value = { tipo: "erro", texto: `Não foi possível exportar: ${error instanceof Error ? error.message : error}` };
+  }
+}
+
 const STATUS_LABEL: Record<string, string> = {
   PENDENTE: "Pendente",
   ATIVO: "Ativo",
@@ -64,6 +94,8 @@ onMounted(() => {
       items: [
         { id: "novo-socio", label: "Novo sócio", icon: "plus", onClick: abrirNovoSocio },
         { id: "aptos-a-votar", label: "Aptos a votar", icon: "file", onClick: abrirAptosAVotar },
+        { id: "importar-csv", label: "Importar CSV", icon: "upload", onClick: abrirImportacao },
+        { id: "exportar-csv", label: "Exportar CSV", icon: "download", onClick: exportarCsv },
       ],
     },
   ]);
@@ -92,6 +124,8 @@ onMounted(() => {
         Somente inadimplentes
       </label>
     </div>
+
+    <p v-if="mensagem" class="mensagem" :class="mensagem.tipo">{{ mensagem.texto }}</p>
 
     <div v-if="loading" class="state-msg">Carregando...</div>
     <div v-else-if="socios.length === 0" class="state-msg">Nenhum sócio encontrado.</div>
@@ -163,6 +197,19 @@ onMounted(() => {
   color: var(--text);
   white-space: nowrap;
   cursor: pointer;
+}
+
+.mensagem {
+  margin: 0 0 1rem;
+  font-size: 0.82rem;
+}
+
+.mensagem.ok {
+  color: var(--accent);
+}
+
+.mensagem.erro {
+  color: #c0392b;
 }
 
 .member-table {

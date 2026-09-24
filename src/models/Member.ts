@@ -4,6 +4,7 @@ import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js
 import { PersonModel, type NovaPessoa, type AtualizacaoPessoa, type GeneroPessoa } from "./Person.js";
 import { MembershipPaymentModel } from "./MembershipPayment.js";
 import { AssociationModel } from "./Association.js";
+import { hojeIso, somarMeses } from "../utils/format.js";
 
 /** Situação do sócio (ver `docs/dominio-associacoes.md`, seção 2.2). */
 export type StatusSocio = "PENDENTE" | "ATIVO" | "INATIVO" | "SUSPENSO" | "DESLIGADO" | "FALECIDO";
@@ -52,6 +53,35 @@ export interface MemberComPessoa extends Member {
   gender: GeneroPessoa | null;
   /** Foto de identificação da pessoa, migration `version: 17` (ver `Person.photo`). */
   photo: string | null;
+}
+
+/** Linha de `MemberModel.listParaExportacao` — sócio + pessoa + contato e endereço principais. */
+export interface SocioExportacao {
+  registration_number: string;
+  association_date: string;
+  status: StatusSocio;
+  dues_start_date: string | null;
+  observations: string | null;
+  full_name: string;
+  cpf: string | null;
+  rg: string | null;
+  birth_date: string | null;
+  gender: GeneroPessoa | null;
+  marital_status: string | null;
+  nationality: string | null;
+  profession: string | null;
+  mother_name: string | null;
+  father_name: string | null;
+  plan_name: string | null;
+  phone: string | null;
+  email: string | null;
+  zip_code: string | null;
+  street: string | null;
+  number: string | null;
+  complement: string | null;
+  district: string | null;
+  city: string | null;
+  state: string | null;
 }
 
 /** Registro do histórico de mudança de situação (`member_status_history`). */
@@ -166,6 +196,48 @@ export class MemberModel {
        ORDER BY p.full_name`,
       [getCurrentAssociationId(), like]
     );
+  }
+
+  /**
+   * Todos os sócios com os dados da pessoa, o 1º telefone/e-mail
+   * (principal primeiro) e o endereço principal — uma linha por sócio, no
+   * formato da exportação em CSV (`src/services/memberCsv.ts`).
+   */
+  static async listParaExportacao(): Promise<SocioExportacao[]> {
+    const db = await getDatabase();
+    return db.select<SocioExportacao[]>(
+      `SELECT m.registration_number, m.association_date, m.status, m.dues_start_date, m.observations,
+              p.full_name, p.cpf, p.rg, p.birth_date, p.gender, p.marital_status, p.nationality,
+              p.profession, p.mother_name, p.father_name,
+              mp.name AS plan_name,
+              (SELECT pc.contact_value FROM person_contacts pc
+                WHERE pc.person_id = p.id AND pc.contact_type IN ('TELEFONE', 'CELULAR')
+                ORDER BY pc.is_primary DESC, pc.created_at LIMIT 1) AS phone,
+              (SELECT pc.contact_value FROM person_contacts pc
+                WHERE pc.person_id = p.id AND pc.contact_type = 'EMAIL'
+                ORDER BY pc.is_primary DESC, pc.created_at LIMIT 1) AS email,
+              a.zip_code, a.street, a.number, a.complement, a.district, a.city, a.state
+       FROM members m
+       JOIN people p ON p.id = m.person_id
+       LEFT JOIN membership_plans mp ON mp.id = m.membership_plan_id
+       LEFT JOIN addresses a ON a.id = (
+         SELECT ad.id FROM addresses ad WHERE ad.person_id = p.id
+         ORDER BY ad.is_primary DESC, ad.created_at LIMIT 1
+       )
+       WHERE m.association_id = $1
+       ORDER BY p.full_name`,
+      [getCurrentAssociationId()]
+    );
+  }
+
+  /** Matrícula já usada por algum sócio desta associação (checagem da importação em CSV). */
+  static async existeMatricula(registrationNumber: string): Promise<boolean> {
+    const db = await getDatabase();
+    const [{ total }] = await db.select<{ total: number }[]>(
+      "SELECT COUNT(*) AS total FROM members WHERE association_id = $1 AND registration_number = $2",
+      [getCurrentAssociationId(), registrationNumber]
+    );
+    return total > 0;
   }
 
   static async get(id: string): Promise<MemberComPessoa | null> {
@@ -295,6 +367,38 @@ export class MemberModel {
       "SELECT * FROM member_status_history WHERE member_id = $1 ORDER BY effective_date DESC, created_at DESC",
       [memberId]
     );
+  }
+
+  /**
+   * Sócios aptos a votar em `dataReferencia` (padrão: hoje), por nome —
+   * regra única usada pela lista impressa (`ImprimirAptosAVotar.vue`):
+   * - situação `ATIVO`;
+   * - nenhuma mensalidade vencida (`MembershipPaymentModel.listarInadimplentesAtivos`);
+   * - pelo menos `Association.voting_min_membership_months` meses de
+   *   filiação, contados de `association_date` (migration `version: 23`;
+   *   `0` = sem carência). Ex.: carência de 12 meses, associado em
+   *   15/03/2025 → apto a partir de 15/03/2026.
+   */
+  static async listarAptosAVotar(
+    dataReferencia: string = hojeIso()
+  ): Promise<{ aptos: MemberComPessoa[]; carenciaMeses: number }> {
+    const [socios, inadimplentes, associacao] = await Promise.all([
+      MemberModel.list(),
+      MembershipPaymentModel.listarInadimplentesAtivos(),
+      AssociationModel.get(getCurrentAssociationId()),
+    ]);
+    const carenciaMeses = associacao?.voting_min_membership_months ?? 0;
+
+    const aptos = socios
+      .filter(
+        (socio) =>
+          socio.status === "ATIVO" &&
+          !inadimplentes.has(socio.id) &&
+          somarMeses(socio.association_date, carenciaMeses) <= dataReferencia
+      )
+      .sort((a, b) => a.full_name.localeCompare(b.full_name));
+
+    return { aptos, carenciaMeses };
   }
 
   /**

@@ -85,6 +85,20 @@ export function hojeIso(): string {
   return new Date().toISOString().slice(0, 10);
 }
 
+/**
+ * Soma `meses` a uma data ISO (`"AAAA-MM-DD"`). Se o dia não existir no mês
+ * de destino, usa o último dia dele (31/01 + 1 mês → 28 ou 29/02).
+ */
+export function somarMeses(dataIso: string, meses: number): string {
+  const [ano, mes, dia] = dataIso.split("-").map(Number);
+  const indiceMes = mes - 1 + meses;
+  const anoDestino = ano + Math.floor(indiceMes / 12);
+  const mesDestino = ((indiceMes % 12) + 12) % 12;
+  const ultimoDia = new Date(Date.UTC(anoDestino, mesDestino + 1, 0)).getUTCDate();
+  const data = new Date(Date.UTC(anoDestino, mesDestino, Math.min(dia, ultimoDia)));
+  return data.toISOString().slice(0, 10);
+}
+
 /** Ano corrente — usado nas regras de vigência do livro de protocolo (ver `ProtocolBookModel`). */
 export function anoAtual(): number {
   return new Date().getFullYear();

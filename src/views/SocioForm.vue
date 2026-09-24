@@ -7,7 +7,7 @@ import { computed, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { MemberModel } from "../models/Member.js";
-import type { GeneroPessoa } from "../models/Person.js";
+import { PersonModel, type GeneroPessoa } from "../models/Person.js";
 import { MembershipPlanModel, type MembershipPlan } from "../models/MembershipPlan.js";
 import { currentMembershipMode, currentAutoRegistrationNumber } from "../composables/useCurrentAssociation.js";
 import { readImageAsDataUrl } from "../services/personPhoto.js";
@@ -71,6 +71,20 @@ onMounted(async () => {
     cpf.value = socio.cpf ?? "";
     gender.value = socio.gender ?? "";
     photo.value = socio.photo ?? null;
+
+    // `MemberComPessoa` só traz nome/CPF/gênero/foto — o resto da pessoa
+    // precisa vir de `people`, senão salvar a edição gravava esses campos
+    // em branco (e a nacionalidade voltava pra "Brasileira").
+    const pessoa = await PersonModel.get(socio.person_id);
+    if (pessoa) {
+      birthDate.value = pessoa.birth_date ?? "";
+      nationality.value = pessoa.nationality || "Brasileira";
+      maritalStatus.value = pessoa.marital_status ?? "";
+      rg.value = pessoa.rg ?? "";
+      profession.value = pessoa.profession ?? "";
+      motherName.value = pessoa.mother_name ?? "";
+      fatherName.value = pessoa.father_name ?? "";
+    }
     registrationNumber.value = socio.registration_number;
     associationDate.value = socio.association_date;
     observations.value = socio.observations ?? "";

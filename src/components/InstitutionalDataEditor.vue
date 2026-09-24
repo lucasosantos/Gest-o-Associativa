@@ -64,6 +64,8 @@ const membershipMode = ref<MembershipMode>("UNICO");
 const contributionAmount = ref(0);
 const contributionDueDay = ref(10);
 const autoRegistrationNumber = ref(false);
+/** Carência para votar, em meses de filiação (ver `Association.voting_min_membership_months`). */
+const votingMinMonths = ref(0);
 
 const street = ref("");
 const number = ref("");
@@ -88,6 +90,7 @@ async function load() {
     contributionAmount.value = 0;
     contributionDueDay.value = 10;
     autoRegistrationNumber.value = false;
+    votingMinMonths.value = 0;
     addressId.value = null;
     street.value = "";
     number.value = "";
@@ -123,6 +126,7 @@ async function load() {
       : 0;
     contributionDueDay.value = associacao.monthly_contribution_due_day ?? 10;
     autoRegistrationNumber.value = Boolean(associacao.auto_registration_number);
+    votingMinMonths.value = associacao.voting_min_membership_months ?? 0;
 
     const [enderecoPrincipal] = await AddressModel.listByAssociation(associacao.id);
     if (enderecoPrincipal) {
@@ -161,12 +165,13 @@ async function cancelarEdicao() {
   editing.value = false;
 }
 
+/** Endereço começado mas incompleto — conferido ANTES de gravar qualquer coisa (ver `handleSave`). */
+function enderecoIncompleto() {
+  return enderecoPreenchido() && (!street.value.trim() || !city.value.trim() || !state.value.trim());
+}
+
 async function salvarEndereco(idAssociacao: string) {
   if (!enderecoPreenchido()) return;
-
-  if (!street.value.trim() || !city.value.trim() || !state.value.trim()) {
-    throw new Error("Para salvar o endereço, preencha ao menos rua, cidade e estado.");
-  }
 
   const dados = {
     street: street.value.trim(),
@@ -195,6 +200,14 @@ async function handleSave() {
     erro.value = "Informe a razão social da associação.";
     return;
   }
+  if (!Number.isInteger(votingMinMonths.value) || votingMinMonths.value < 0) {
+    erro.value = "Os meses de associado para ter direito a voto devem ser um número inteiro, 0 ou maior.";
+    return;
+  }
+  if (enderecoIncompleto()) {
+    erro.value = "Para salvar o endereço, preencha ao menos rua, cidade e estado.";
+    return;
+  }
 
   saving.value = true;
   erro.value = "";
@@ -212,14 +225,21 @@ async function handleSave() {
       monthly_contribution_amount: contributionAmount.value > 0 ? reaisParaCentavos(contributionAmount.value) : null,
       monthly_contribution_due_day: contributionDueDay.value || null,
       auto_registration_number: (autoRegistrationNumber.value ? 1 : 0) as 0 | 1,
+      voting_min_membership_months: votingMinMonths.value,
     };
 
-    let idAssociacao = props.associationId;
-    if (idAssociacao) {
-      await AssociationModel.update(idAssociacao, dados);
+    if (props.associationId) {
+      await AssociationModel.update(props.associationId, dados);
+      await salvarEndereco(props.associationId);
     } else {
       const criada = await AssociationModel.create(dados);
-      idAssociacao = criada.id;
+      // O endereço PRECISA ser gravado antes de `setCurrentAssociationId`:
+      // trocar o id faz o Início recriar este componente (`:key` em
+      // Inicio.vue) — a instância nova lia o banco antes do endereço chegar
+      // (aparecia "Nenhum endereço cadastrado", e editar de novo criava um
+      // 2º endereço), e qualquer erro daqui pra frente caía numa instância
+      // que já saiu da tela.
+      await salvarEndereco(criada.id);
       setCurrentAssociationId(criada.id);
       // Primeira vez que esta associação é cadastrada (banco recém-criado,
       // sem nenhum tipo de documento ainda) — pré-cadastra os mais comuns
@@ -229,8 +249,6 @@ async function handleSave() {
     }
     setCurrentMembershipMode(membershipMode.value);
     setCurrentAutoRegistrationNumber(autoRegistrationNumber.value);
-
-    await salvarEndereco(idAssociacao);
 
     // Fundação preenchida (ou corrigida) — garante na hora que o
     // calendário de parcelas cobre desde ela até o mês atual (ver
@@ -283,6 +301,12 @@ async function handleSave() {
     <dl class="view-grid">
       <dt>Numeração</dt>
       <dd>{{ autoRegistrationNumber ? "Automática (sequencial)" : "Manual" }}</dd>
+    </dl>
+
+    <h3 class="section-title">Direito a voto</h3>
+    <dl class="view-grid">
+      <dt>Meses de associado para ter direito a voto</dt>
+      <dd>{{ votingMinMonths > 0 ? `${votingMinMonths} ${votingMinMonths === 1 ? "mês" : "meses"}` : "Sem carência" }}</dd>
     </dl>
 
     <h3 class="section-title">Mensalidade</h3>
@@ -389,6 +413,16 @@ async function handleSave() {
             ? "Ao registrar um sócio, o número da matrícula é gerado sozinho — o campo some da ficha de sócio."
             : "Ao registrar um sócio, o usuário informa o número da matrícula na ficha."
         }}
+      </p>
+    </div>
+
+    <h3 class="section-title">Direito a voto</h3>
+    <div class="field">
+      <label class="field-label" for="voting-min-months">Meses de associado para ter direito a voto</label>
+      <input id="voting-min-months" v-model.number="votingMinMonths" type="number" min="0" step="1" :disabled="saving" />
+      <p class="field-hint">
+        Tempo mínimo desde a data de associação para o sócio aparecer na lista de aptos a votar (além de estar
+        Ativo e com a mensalidade em dia). Use 0 para não exigir carência.
       </p>
     </div>
 

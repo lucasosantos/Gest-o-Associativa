@@ -5,6 +5,7 @@
 // sidebar (`AssociationSwitcher.vue`, montado em `SidebarTools.vue`) —
 // pedido do usuário: só aparece aqui, não nas demais telas.
 import { onMounted, ref, watch } from "vue";
+import { open as openDialog, save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { currentAssociationId, isAssociationConnected } from "../composables/useCurrentAssociation.js";
 import { useAssociationScopedData } from "../composables/useAssociationScopedData.js";
 import { MemberModel } from "../models/Member.js";
@@ -14,7 +15,10 @@ import { PayableModel } from "../models/Payable.js";
 import { ReceivableModel } from "../models/Receivable.js";
 import { ProtocolEntryModel } from "../models/ProtocolEntry.js";
 import { DocumentModel } from "../models/Document.js";
-import { formatarMoeda } from "../utils/format.js";
+import { formatarBytes, formatarMoeda, hojeIso } from "../utils/format.js";
+import { exportarBackup, importarBackup } from "../services/backup.js";
+import { restartApp } from "../services/config.js";
+import Spinner from "../components/Spinner.vue";
 import InstitutionalDataEditor from "../components/InstitutionalDataEditor.vue";
 
 type Aba = "dashboard" | "instituicao";
@@ -67,6 +71,68 @@ async function carregarResumo() {
     };
   } finally {
     loadingResumo.value = false;
+  }
+}
+
+/** Operação de backup em andamento (trava os dois botões enquanto roda). */
+const backupEmAndamento = ref<"exportar" | "importar" | null>(null);
+const mensagemBackup = ref<{ tipo: "ok" | "erro"; texto: string } | null>(null);
+
+function mensagemDe(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/** Backup completo (banco + documentos anexados) num `.zip` — ver `src/services/backup.ts`. */
+async function exportarBackupCompleto() {
+  mensagemBackup.value = null;
+  const destino = await saveDialog({
+    defaultPath: `backup-associacao-${hojeIso()}.zip`,
+    filters: [{ name: "Backup", extensions: ["zip"] }],
+  });
+  if (!destino) return;
+
+  backupEmAndamento.value = "exportar";
+  try {
+    const resumo = await exportarBackup(destino);
+    mensagemBackup.value = {
+      tipo: "ok",
+      texto: `Backup salvo em ${destino} (${formatarBytes(resumo.tamanho_bytes)}, ${resumo.documentos} arquivo(s) de documentos).`,
+    };
+  } catch (error) {
+    mensagemBackup.value = { tipo: "erro", texto: `Não foi possível gerar o backup: ${mensagemDe(error)}` };
+  } finally {
+    backupEmAndamento.value = null;
+  }
+}
+
+/**
+ * Restaura um backup POR CIMA da associação conectada. Nada é apagado: o
+ * banco e a pasta de documentos atuais ficam guardados ao lado, renomeados
+ * (ver `import_backup` em `src-tauri/src/backup.rs`). O app reinicia no fim
+ * pra rodar as migrations no banco restaurado.
+ */
+async function importarBackupCompleto() {
+  mensagemBackup.value = null;
+  const origem = await openDialog({
+    multiple: false,
+    filters: [{ name: "Backup", extensions: ["zip", "db"] }],
+  });
+  if (!origem || Array.isArray(origem)) return;
+
+  const confirmado = confirm(
+    "Todos os dados atuais desta associação serão SUBSTITUÍDOS pelos do backup escolhido. " +
+      "Uma cópia dos dados atuais fica guardada na mesma pasta do banco. O aplicativo será reiniciado. Continuar?"
+  );
+  if (!confirmado) return;
+
+  backupEmAndamento.value = "importar";
+  try {
+    const copiaSeguranca = await importarBackup(origem);
+    alert(`Backup restaurado. Os dados anteriores foram guardados em:\n${copiaSeguranca}\n\nO aplicativo será reiniciado agora.`);
+    await restartApp();
+  } catch (error) {
+    mensagemBackup.value = { tipo: "erro", texto: `Não foi possível restaurar o backup: ${mensagemDe(error)}` };
+    backupEmAndamento.value = null;
   }
 }
 
@@ -161,6 +227,28 @@ onMounted(() => {
               <p class="card-sub">cadastrados</p>
             </div>
           </div>
+
+          <div class="backup-panel">
+            <div>
+              <h3>Backup dos dados</h3>
+              <p class="card-sub">
+                Salva tudo desta associação (sócios, financeiro, protocolos, documentos anexados...) num único
+                arquivo <code>.zip</code>. Use para guardar uma cópia de segurança ou para levar os dados para outro
+                computador: lá, cadastre a associação e use "Importar backup".
+              </p>
+            </div>
+            <div class="backup-actions">
+              <button type="button" class="btn-secondary" :disabled="backupEmAndamento !== null" @click="exportarBackupCompleto">
+                <Spinner v-if="backupEmAndamento === 'exportar'" />
+                {{ backupEmAndamento === "exportar" ? "Gerando..." : "Exportar backup" }}
+              </button>
+              <button type="button" class="btn-secondary" :disabled="backupEmAndamento !== null" @click="importarBackupCompleto">
+                <Spinner v-if="backupEmAndamento === 'importar'" />
+                {{ backupEmAndamento === "importar" ? "Restaurando..." : "Importar backup" }}
+              </button>
+            </div>
+            <p v-if="mensagemBackup" class="backup-msg" :class="mensagemBackup.tipo">{{ mensagemBackup.texto }}</p>
+          </div>
         </div>
 
         <div v-else>
@@ -236,6 +324,75 @@ onMounted(() => {
   margin: 0.3rem 0 0;
   font-size: 0.78rem;
   color: var(--text-muted);
+}
+
+.backup-panel {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem 1.5rem;
+  max-width: 1100px;
+  margin-top: 1.5rem;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+}
+
+.backup-panel > div:first-child {
+  flex: 1 1 360px;
+}
+
+.backup-panel h3 {
+  margin: 0 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.backup-panel code {
+  font-size: 0.74rem;
+}
+
+.backup-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.btn-secondary {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.backup-msg {
+  flex-basis: 100%;
+  margin: 0;
+  font-size: 0.8rem;
+}
+
+.backup-msg.ok {
+  color: var(--accent);
+}
+
+.backup-msg.erro {
+  color: #c0392b;
 }
 
 .card-alert {
