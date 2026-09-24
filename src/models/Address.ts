@@ -1,5 +1,6 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
+import { comAtividade, nomeDaPessoa } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `addresses` (migration `version: 1`). Endereço
@@ -66,50 +67,89 @@ export class AddressModel {
   }
 
   static async create(dados: NovoEndereco): Promise<Address> {
-    if (!dados.association_id && !dados.person_id) {
-      throw new Error("Endereço precisa pertencer a uma associação ou a uma pessoa.");
-    }
+    return comAtividade(
+      async () => {
+        if (!dados.association_id && !dados.person_id) {
+          throw new Error("Endereço precisa pertencer a uma associação ou a uma pessoa.");
+        }
 
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO addresses
-         (id, association_id, person_id, address_type, street, number, complement, district, city, state, country, zip_code, is_primary)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        id,
-        dados.association_id ?? null,
-        dados.person_id ?? null,
-        dados.address_type ?? "RESIDENCIAL",
-        dados.street,
-        dados.number ?? null,
-        dados.complement ?? null,
-        dados.district ?? null,
-        dados.city,
-        dados.state,
-        dados.country ?? "Brasil",
-        dados.zip_code ?? null,
-        dados.is_primary ?? 0,
-      ]
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO addresses
+             (id, association_id, person_id, address_type, street, number, complement, district, city, state, country, zip_code, is_primary)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            id,
+            dados.association_id ?? null,
+            dados.person_id ?? null,
+            dados.address_type ?? "RESIDENCIAL",
+            dados.street,
+            dados.number ?? null,
+            dados.complement ?? null,
+            dados.district ?? null,
+            dados.city,
+            dados.state,
+            dados.country ?? "Brasil",
+            dados.zip_code ?? null,
+            dados.is_primary ?? 0,
+          ]
+        );
+
+        const [criado] = await db.select<Address[]>("SELECT * FROM addresses WHERE id = $1", [id]);
+        return criado;
+      },
+      async () => ({
+        association_id: dados.association_id ?? undefined,
+        module: dados.person_id ? "SOCIOS" : "INSTITUICAO",
+        description: dados.person_id
+          ? `Endereço cadastrado — ${await nomeDaPessoa(dados.person_id)}`
+          : "Endereço da associação cadastrado",
+      })
     );
-
-    const [criado] = await db.select<Address[]>("SELECT * FROM addresses WHERE id = $1", [id]);
-    return criado;
   }
 
   static async update(id: string, dados: AtualizacaoEndereco): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    const [endereco] = await (await getDatabase()).select<Address[]>("SELECT * FROM addresses WHERE id = $1", [id]);
+    if (!endereco) throw new Error("Endereço não encontrado.");
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number | null);
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
 
-    await db.execute(`UPDATE addresses SET ${sets} WHERE id = $1`, [id, ...valores]);
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number | null);
+
+        await db.execute(`UPDATE addresses SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      async () => ({
+        association_id: endereco.association_id ?? undefined,
+        module: endereco.person_id ? "SOCIOS" : "INSTITUICAO",
+        description: endereco.person_id
+          ? `Endereço alterado — ${await nomeDaPessoa(endereco.person_id)}`
+          : "Endereço da associação alterado",
+      })
+    );
   }
 
   static async remove(id: string): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("DELETE FROM addresses WHERE id = $1", [id]);
+    const [endereco] = await (await getDatabase()).select<Address[]>("SELECT * FROM addresses WHERE id = $1", [id]);
+    if (!endereco) throw new Error("Endereço não encontrado.");
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("DELETE FROM addresses WHERE id = $1", [id]);
+      },
+      async () => ({
+        association_id: endereco.association_id ?? undefined,
+        module: endereco.person_id ? "SOCIOS" : "INSTITUICAO",
+        description: endereco.person_id
+          ? `Endereço removido — ${await nomeDaPessoa(endereco.person_id)}`
+          : "Endereço da associação removido",
+      })
+    );
   }
 }

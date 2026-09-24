@@ -2,6 +2,7 @@ import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { anoAtual } from "../utils/format.js";
+import { ActivityLogModel, comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `protocol_books` (migration `version: 6`). `next_number`
@@ -48,10 +49,17 @@ export class ProtocolBookModel {
    */
   static async fecharLivrosDoAnoEncerrado(): Promise<void> {
     const db = await getDatabase();
-    await db.execute("UPDATE protocol_books SET is_active = 0 WHERE association_id = $1 AND is_active = 1 AND year < $2", [
-      getCurrentAssociationId(),
-      anoAtual(),
-    ]);
+    const { rowsAffected } = await db.execute(
+      "UPDATE protocol_books SET is_active = 0 WHERE association_id = $1 AND is_active = 1 AND year < $2",
+      [getCurrentAssociationId(), anoAtual()]
+    );
+    // Roda a cada listagem — só entra no histórico quando fechou algum livro de fato.
+    if (rowsAffected > 0) {
+      await ActivityLogModel.registrar({
+        module: "PROTOCOLOS",
+        description: `Livros de protocolo de anos anteriores fechados automaticamente (${rowsAffected})`,
+      });
+    }
   }
 
   /** Verdadeiro se o livro já tem algum protocolo lançado — trava edição e exclusão. */
@@ -110,17 +118,25 @@ export class ProtocolBookModel {
       throw new Error(`Só é possível abrir um livro para o ano corrente (${anoAtual()}).`);
     }
 
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO protocol_books (id, association_id, name, protocol_type, year, prefix)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, associationId, dados.name, dados.protocol_type, dados.year, dados.prefix ?? null]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO protocol_books (id, association_id, name, protocol_type, year, prefix)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, associationId, dados.name, dados.protocol_type, dados.year, dados.prefix ?? null]
+        );
 
-    const [criado] = await db.select<ProtocolBook[]>("SELECT * FROM protocol_books WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<ProtocolBook[]>("SELECT * FROM protocol_books WHERE id = $1", [id]);
+        return criado;
+      },
+      (livro) => ({
+        module: "PROTOCOLOS",
+        description: `Livro de protocolo aberto — ${livro.name} (${livro.year})`,
+      })
+    );
   }
 
   /**
@@ -143,11 +159,21 @@ export class ProtocolBookModel {
       throw new Error(`Só é possível abrir um livro para o ano corrente (${anoAtual()}).`);
     }
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number | null);
+    const livro = await ProtocolBookModel.get(id);
 
-    await db.execute(`UPDATE protocol_books SET ${sets} WHERE id = $1`, [id, ...valores]);
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number | null);
+
+        await db.execute(`UPDATE protocol_books SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      () => ({
+        module: "PROTOCOLOS",
+        description: `Livro de protocolo alterado — ${dados.name ?? livro?.name ?? id}`,
+      })
+    );
   }
 
   /**
@@ -163,16 +189,22 @@ export class ProtocolBookModel {
    * `fecharLivrosDoAnoEncerrado`.
    */
   static async setActive(id: string, isActive: boolean): Promise<void> {
-    if (isActive) {
-      const livro = await ProtocolBookModel.get(id);
-      if (!livro) throw new Error("Livro de protocolo não encontrado.");
-      if (livro.year !== anoAtual()) {
-        throw new Error(`Este livro é do ano ${livro.year} e só pode ser reaberto no ano corrente (${anoAtual()}).`);
-      }
+    const livro = await ProtocolBookModel.get(id);
+    if (!livro) throw new Error("Livro de protocolo não encontrado.");
+    if (isActive && livro.year !== anoAtual()) {
+      throw new Error(`Este livro é do ano ${livro.year} e só pode ser reaberto no ano corrente (${anoAtual()}).`);
     }
 
-    const db = await getDatabase();
-    await db.execute("UPDATE protocol_books SET is_active = $2 WHERE id = $1", [id, isActive ? 1 : 0]);
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE protocol_books SET is_active = $2 WHERE id = $1", [id, isActive ? 1 : 0]);
+      },
+      () => ({
+        module: "PROTOCOLOS",
+        description: `Livro de protocolo ${isActive ? "reaberto" : "fechado"} — ${livro.name}`,
+      })
+    );
   }
 
   /**
@@ -186,7 +218,18 @@ export class ProtocolBookModel {
     if (await ProtocolBookModel.temProtocoloLancado(id)) {
       throw new Error("Este livro já tem protocolo lançado e não pode ser excluído.");
     }
-    const db = await getDatabase();
-    await db.execute("DELETE FROM protocol_books WHERE id = $1", [id]);
+
+    const livro = await ProtocolBookModel.get(id);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("DELETE FROM protocol_books WHERE id = $1", [id]);
+      },
+      () => ({
+        module: "PROTOCOLOS",
+        description: `Livro de protocolo excluído — ${livro?.name ?? id}`,
+      })
+    );
   }
 }

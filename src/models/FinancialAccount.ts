@@ -2,6 +2,7 @@ import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { SINAL_LANCAMENTO_SQL, type CashTransactionComNomes } from "./CashTransaction.js";
+import { comAtividade, verboAtualizacao } from "./ActivityLog.js";
 
 /** Espelha a tabela `financial_accounts` (migration `version: 3`). */
 export interface FinancialAccount {
@@ -91,39 +92,57 @@ export class FinancialAccountModel {
   }
 
   static async create(dados: NovaContaFinanceira): Promise<FinancialAccount> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO financial_accounts
-         (id, association_id, name, account_type, bank_name, agency, account_number_masked, opening_balance, opening_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, date('now')))`,
-      [
-        id,
-        associationId,
-        dados.name,
-        dados.account_type,
-        dados.bank_name ?? null,
-        dados.agency ?? null,
-        dados.account_number_masked ?? null,
-        dados.opening_balance ?? 0,
-        dados.opening_date ?? null,
-      ]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO financial_accounts
+             (id, association_id, name, account_type, bank_name, agency, account_number_masked, opening_balance, opening_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, date('now')))`,
+          [
+            id,
+            associationId,
+            dados.name,
+            dados.account_type,
+            dados.bank_name ?? null,
+            dados.agency ?? null,
+            dados.account_number_masked ?? null,
+            dados.opening_balance ?? 0,
+            dados.opening_date ?? null,
+          ]
+        );
 
-    const [criada] = await db.select<FinancialAccount[]>("SELECT * FROM financial_accounts WHERE id = $1", [id]);
-    return criada;
+        const [criada] = await db.select<FinancialAccount[]>("SELECT * FROM financial_accounts WHERE id = $1", [id]);
+        return criada;
+      },
+      (criado) => ({
+        module: "FINANCEIRO",
+        description: `Conta financeira cadastrada — ${criado.name}`,
+      })
+    );
   }
 
   static async update(id: string, dados: AtualizacaoContaFinanceira): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    const [atual] = await (await getDatabase()).select<{ name: string }[]>("SELECT name FROM financial_accounts WHERE id = $1", [id]);
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number | null);
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
 
-    await db.execute(`UPDATE financial_accounts SET ${sets} WHERE id = $1`, [id, ...valores]);
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number | null);
+
+        await db.execute(`UPDATE financial_accounts SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Conta financeira ${verboAtualizacao(dados, "a")} — ${dados.name ?? atual?.name ?? id}`,
+      })
+    );
   }
 
   /**

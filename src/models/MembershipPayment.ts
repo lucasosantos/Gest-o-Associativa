@@ -1,12 +1,13 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { calcularVencimento, hojeIso } from "../utils/format.js";
+import { calcularVencimento, hojeIso, formatarMoeda } from "../utils/format.js";
 import { AssociationModel } from "./Association.js";
 import { MembershipPlanModel } from "./MembershipPlan.js";
 import { CashTransactionModel } from "./CashTransaction.js";
 import { ProtocolBookModel, type ProtocolBook } from "./ProtocolBook.js";
 import { ProtocolEntryModel, formatarNumeroProtocolo } from "./ProtocolEntry.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `membership_payments` (migration `version: 13`) —
@@ -332,74 +333,86 @@ export class MembershipPaymentModel {
   static async pagar(memberId: string, parcelaId: string, dados: BaixaMensalidade): Promise<MembershipPaymentComDetalhes> {
     if (dados.amount <= 0) throw new Error("Valor pago deve ser maior que zero.");
 
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
 
-    const existentes = await db.select<{ id: string }[]>(
-      "SELECT id FROM membership_payments WHERE member_id = $1 AND parcela_id = $2",
-      [memberId, parcelaId]
+        const existentes = await db.select<{ id: string }[]>(
+          "SELECT id FROM membership_payments WHERE member_id = $1 AND parcela_id = $2",
+          [memberId, parcelaId]
+        );
+        if (existentes.length > 0) {
+          throw new Error("Este mês já tem pagamento registrado para este sócio.");
+        }
+
+        const [parcela] = await db.select<{ competence_month: string }[]>(
+          "SELECT competence_month FROM parcelas WHERE id = $1",
+          [parcelaId]
+        );
+        if (!parcela) throw new Error("Competência não encontrada.");
+
+        let receiptNumber: string | null = null;
+        let protocolEntryId: string | null = null;
+        if (dados.protocol_book_id) {
+          const [membro] = await db.select<{ full_name: string }[]>(
+            `SELECT pe.full_name AS full_name FROM members m JOIN people pe ON pe.id = m.person_id WHERE m.id = $1`,
+            [memberId]
+          );
+          const nomeSocio = membro?.full_name ?? null;
+          const recibo = await criarReciboDeProtocolo(dados.protocol_book_id, {
+            protocolDate: dados.payment_date,
+            recipientName: nomeSocio,
+            subject: `Recibo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${formatarCompetenciaCurta(parcela.competence_month)}`,
+            memberId,
+          });
+          receiptNumber = recibo.receiptNumber;
+          protocolEntryId = recibo.protocolEntryId;
+        }
+
+        const id = newId();
+        const transacao = await CashTransactionModel.create({
+          financial_account_id: dados.financial_account_id,
+          transaction_type: "RECEITA",
+          amount: dados.amount,
+          transaction_date: dados.payment_date,
+          competence_date: parcela.competence_month,
+          description: `Mensalidade ${formatarCompetenciaCurta(parcela.competence_month)}`,
+          payment_method_id: dados.payment_method_id ?? null,
+          source_type: "MEMBERSHIP_PAYMENT",
+          source_id: id,
+        });
+
+        await db.execute(
+          `INSERT INTO membership_payments
+             (id, association_id, member_id, parcela_id, cash_transaction_id, paid_amount, paid_at, payment_method, receipt_number, protocol_entry_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+          [
+            id,
+            associationId,
+            memberId,
+            parcelaId,
+            transacao.id,
+            dados.amount,
+            dados.payment_date,
+            dados.payment_method_label ?? null,
+            receiptNumber,
+            protocolEntryId,
+          ]
+        );
+
+        const criado = await MembershipPaymentModel.get(id);
+        if (!criado) throw new Error("Falha ao registrar o pagamento.");
+        return criado;
+      },
+      (pagamento) => ({
+        module: "MENSALIDADES",
+        description: `Pagamento de mensalidade — ${pagamento.full_name} — ${formatarCompetenciaCurta(pagamento.competence_month)} — ${formatarMoeda(
+          pagamento.paid_amount
+        )}${pagamento.receipt_number ? ` (recibo ${pagamento.receipt_number})` : ""}`,
+        entity_type: "MEMBER",
+        entity_id: memberId,
+      })
     );
-    if (existentes.length > 0) {
-      throw new Error("Este mês já tem pagamento registrado para este sócio.");
-    }
-
-    const [parcela] = await db.select<{ competence_month: string }[]>(
-      "SELECT competence_month FROM parcelas WHERE id = $1",
-      [parcelaId]
-    );
-    if (!parcela) throw new Error("Competência não encontrada.");
-
-    let receiptNumber: string | null = null;
-    let protocolEntryId: string | null = null;
-    if (dados.protocol_book_id) {
-      const [membro] = await db.select<{ full_name: string }[]>(
-        `SELECT pe.full_name AS full_name FROM members m JOIN people pe ON pe.id = m.person_id WHERE m.id = $1`,
-        [memberId]
-      );
-      const nomeSocio = membro?.full_name ?? null;
-      const recibo = await criarReciboDeProtocolo(dados.protocol_book_id, {
-        protocolDate: dados.payment_date,
-        recipientName: nomeSocio,
-        subject: `Recibo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${formatarCompetenciaCurta(parcela.competence_month)}`,
-        memberId,
-      });
-      receiptNumber = recibo.receiptNumber;
-      protocolEntryId = recibo.protocolEntryId;
-    }
-
-    const id = newId();
-    const transacao = await CashTransactionModel.create({
-      financial_account_id: dados.financial_account_id,
-      transaction_type: "RECEITA",
-      amount: dados.amount,
-      transaction_date: dados.payment_date,
-      competence_date: parcela.competence_month,
-      description: `Mensalidade ${formatarCompetenciaCurta(parcela.competence_month)}`,
-      payment_method_id: dados.payment_method_id ?? null,
-      source_type: "MEMBERSHIP_PAYMENT",
-      source_id: id,
-    });
-
-    await db.execute(
-      `INSERT INTO membership_payments
-         (id, association_id, member_id, parcela_id, cash_transaction_id, paid_amount, paid_at, payment_method, receipt_number, protocol_entry_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
-      [
-        id,
-        associationId,
-        memberId,
-        parcelaId,
-        transacao.id,
-        dados.amount,
-        dados.payment_date,
-        dados.payment_method_label ?? null,
-        receiptNumber,
-        protocolEntryId,
-      ]
-    );
-
-    const criado = await MembershipPaymentModel.get(id);
-    if (!criado) throw new Error("Falha ao registrar o pagamento.");
-    return criado;
   }
 }

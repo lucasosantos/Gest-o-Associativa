@@ -3,6 +3,8 @@ import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { CashTransactionModel } from "./CashTransaction.js";
 import { gerarParcelasIguais } from "../utils/installments.js";
+import { comAtividade } from "./ActivityLog.js";
+import { formatarMoeda } from "../utils/format.js";
 
 export type StatusReceivable = "ABERTA" | "PARCIAL" | "RECEBIDA" | "CANCELADA";
 export type StatusReceivableInstallment = "ABERTA" | "PARCIAL" | "RECEBIDA" | "CANCELADA";
@@ -100,37 +102,45 @@ export class ReceivableModel {
       throw new Error("Informe o sócio ou o pagador de origem da conta a receber.");
     }
 
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
 
-    await db.execute(
-      `INSERT INTO receivables (id, association_id, payer_id, member_id, description, source_type, total_amount, financial_category_id, cost_center_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        id,
-        associationId,
-        dados.payer_id ?? null,
-        dados.member_id ?? null,
-        dados.description,
-        dados.source_type ?? null,
-        dados.total_amount,
-        dados.financial_category_id ?? null,
-        dados.cost_center_id ?? null,
-      ]
+        await db.execute(
+          `INSERT INTO receivables (id, association_id, payer_id, member_id, description, source_type, total_amount, financial_category_id, cost_center_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            id,
+            associationId,
+            dados.payer_id ?? null,
+            dados.member_id ?? null,
+            dados.description,
+            dados.source_type ?? null,
+            dados.total_amount,
+            dados.financial_category_id ?? null,
+            dados.cost_center_id ?? null,
+          ]
+        );
+
+        const parcelas = gerarParcelasIguais(dados.total_amount, dados.installments, dados.first_due_date);
+        for (const parcela of parcelas) {
+          await db.execute(
+            `INSERT INTO receivable_installments (id, receivable_id, installment_number, due_date, original_amount)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [newId(), id, parcela.installment_number, parcela.due_date, parcela.original_amount]
+          );
+        }
+
+        const [criada] = await db.select<Receivable[]>("SELECT * FROM receivables WHERE id = $1", [id]);
+        return criada;
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Conta a receber cadastrada — ${dados.description} — ${formatarMoeda(dados.total_amount)} em ${dados.installments}x`,
+      })
     );
-
-    const parcelas = gerarParcelasIguais(dados.total_amount, dados.installments, dados.first_due_date);
-    for (const parcela of parcelas) {
-      await db.execute(
-        `INSERT INTO receivable_installments (id, receivable_id, installment_number, due_date, original_amount)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [newId(), id, parcela.installment_number, parcela.due_date, parcela.original_amount]
-      );
-    }
-
-    const [criada] = await db.select<Receivable[]>("SELECT * FROM receivables WHERE id = $1", [id]);
-    return criada;
   }
 
   /** Baixa (total ou parcial) de uma parcela — mesma lógica de `PayableModel.payInstallment`, em receita. */
@@ -153,35 +163,43 @@ export class ReceivableModel {
       throw new Error("Valor a receber não pode ser maior que o saldo restante da parcela.");
     }
 
-    const totalParcelas = (await ReceivableModel.installments(receivable.id)).length;
-    const transacao = await CashTransactionModel.create({
-      financial_account_id: dados.financial_account_id,
-      transaction_type: "RECEITA",
-      amount: valorRecebido,
-      transaction_date: dados.payment_date,
-      competence_date: dados.payment_date,
-      description: `Recebimento ${parcela.installment_number}/${totalParcelas} — ${receivable.description}`,
-      financial_category_id: receivable.financial_category_id,
-      cost_center_id: receivable.cost_center_id,
-      payment_method_id: dados.payment_method_id ?? null,
-      source_type: "RECEIVABLE_INSTALLMENT",
-      source_id: installmentId,
-    });
+    return comAtividade(
+      async () => {
+        const totalParcelas = (await ReceivableModel.installments(receivable.id)).length;
+        const transacao = await CashTransactionModel.create({
+          financial_account_id: dados.financial_account_id,
+          transaction_type: "RECEITA",
+          amount: valorRecebido,
+          transaction_date: dados.payment_date,
+          competence_date: dados.payment_date,
+          description: `Recebimento ${parcela.installment_number}/${totalParcelas} — ${receivable.description}`,
+          financial_category_id: receivable.financial_category_id,
+          cost_center_id: receivable.cost_center_id,
+          payment_method_id: dados.payment_method_id ?? null,
+          source_type: "RECEIVABLE_INSTALLMENT",
+          source_id: installmentId,
+        });
 
-    await db.execute(
-      `INSERT INTO receivable_payments (id, receivable_installment_id, cash_transaction_id, amount, received_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [newId(), installmentId, transacao.id, valorRecebido, dados.payment_date]
+        await db.execute(
+          `INSERT INTO receivable_payments (id, receivable_installment_id, cash_transaction_id, amount, received_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newId(), installmentId, transacao.id, valorRecebido, dados.payment_date]
+        );
+
+        const novoRecebido = parcela.received_amount + valorRecebido;
+        const quitada = novoRecebido >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
+        await db.execute(
+          "UPDATE receivable_installments SET received_amount = $2, status = $3, received_at = $4 WHERE id = $1",
+          [installmentId, novoRecebido, quitada ? "RECEBIDA" : "PARCIAL", quitada ? dados.payment_date : null]
+        );
+
+        await ReceivableModel.refreshStatus(receivable.id);
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Recebimento — ${receivable.description} — parcela ${parcela.installment_number} — ${formatarMoeda(valorRecebido)}`,
+      })
     );
-
-    const novoRecebido = parcela.received_amount + valorRecebido;
-    const quitada = novoRecebido >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
-    await db.execute(
-      "UPDATE receivable_installments SET received_amount = $2, status = $3, received_at = $4 WHERE id = $1",
-      [installmentId, novoRecebido, quitada ? "RECEBIDA" : "PARCIAL", quitada ? dados.payment_date : null]
-    );
-
-    await ReceivableModel.refreshStatus(receivable.id);
   }
 
   /** Recalcula `receivables.status` a partir da situação de todas as parcelas. */

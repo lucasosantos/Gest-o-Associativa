@@ -17,6 +17,7 @@ import { AddressModel } from "../models/Address.js";
 import { ParcelaModel } from "../models/Parcela.js";
 import { MemberModel } from "../models/Member.js";
 import { DocumentTypeModel } from "../models/DocumentType.js";
+import { comAtividade } from "../models/ActivityLog.js";
 import { centavosParaReais, reaisParaCentavos, formatarData, formatarMoeda } from "../utils/format.js";
 import {
   setCurrentAssociationId,
@@ -229,17 +230,34 @@ async function handleSave() {
     };
 
     if (props.associationId) {
-      await AssociationModel.update(props.associationId, dados);
-      await salvarEndereco(props.associationId);
+      const associationId = props.associationId;
+      // Dados + endereço = uma atividade só no histórico.
+      await comAtividade(
+        async () => {
+          await AssociationModel.update(associationId, dados);
+          await salvarEndereco(associationId);
+        },
+        () => ({ association_id: associationId, module: "INSTITUICAO", description: "Dados institucionais alterados" })
+      );
     } else {
-      const criada = await AssociationModel.create(dados);
-      // O endereço PRECISA ser gravado antes de `setCurrentAssociationId`:
-      // trocar o id faz o Início recriar este componente (`:key` em
-      // Inicio.vue) — a instância nova lia o banco antes do endereço chegar
-      // (aparecia "Nenhum endereço cadastrado", e editar de novo criava um
-      // 2º endereço), e qualquer erro daqui pra frente caía numa instância
-      // que já saiu da tela.
-      await salvarEndereco(criada.id);
+      const criada = await comAtividade(
+        async () => {
+          const nova = await AssociationModel.create(dados);
+          // O endereço PRECISA ser gravado antes de `setCurrentAssociationId`:
+          // trocar o id faz o Início recriar este componente (`:key` em
+          // Inicio.vue) — a instância nova lia o banco antes do endereço chegar
+          // (aparecia "Nenhum endereço cadastrado", e editar de novo criava um
+          // 2º endereço), e qualquer erro daqui pra frente caía numa instância
+          // que já saiu da tela.
+          await salvarEndereco(nova.id);
+          return nova;
+        },
+        (nova) => ({
+          association_id: nova.id,
+          module: "INSTITUICAO",
+          description: `Associação cadastrada — ${nova.legal_name}`,
+        })
+      );
       setCurrentAssociationId(criada.id);
       // Primeira vez que esta associação é cadastrada (banco recém-criado,
       // sem nenhum tipo de documento ainda) — pré-cadastra os mais comuns

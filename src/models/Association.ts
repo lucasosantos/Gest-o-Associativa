@@ -1,5 +1,6 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /** Situação cadastral da associação (ver docs/dominio-associacoes.md, seção 4.1). */
 export type StatusAssociacao = "ATIVA" | "INATIVA" | "ENCERRADA";
@@ -102,34 +103,43 @@ export class AssociationModel {
   }
 
   static async create(dados: NovaAssociacao): Promise<Association> {
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO associations
-         (id, legal_name, trade_name, cnpj, foundation_date, status, email, phone, website,
-          monthly_contribution_amount, monthly_contribution_due_day, membership_mode, auto_registration_number,
-          voting_min_membership_months)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [
-        id,
-        dados.legal_name,
-        dados.trade_name ?? null,
-        dados.cnpj ?? null,
-        dados.foundation_date ?? null,
-        dados.status ?? "ATIVA",
-        dados.email ?? null,
-        dados.phone ?? null,
-        dados.website ?? null,
-        dados.monthly_contribution_amount ?? null,
-        dados.monthly_contribution_due_day ?? null,
-        dados.membership_mode ?? "UNICO",
-        dados.auto_registration_number ?? 0,
-        dados.voting_min_membership_months ?? 0,
-      ]
-    );
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO associations
+             (id, legal_name, trade_name, cnpj, foundation_date, status, email, phone, website,
+              monthly_contribution_amount, monthly_contribution_due_day, membership_mode, auto_registration_number,
+              voting_min_membership_months)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            id,
+            dados.legal_name,
+            dados.trade_name ?? null,
+            dados.cnpj ?? null,
+            dados.foundation_date ?? null,
+            dados.status ?? "ATIVA",
+            dados.email ?? null,
+            dados.phone ?? null,
+            dados.website ?? null,
+            dados.monthly_contribution_amount ?? null,
+            dados.monthly_contribution_due_day ?? null,
+            dados.membership_mode ?? "UNICO",
+            dados.auto_registration_number ?? 0,
+            dados.voting_min_membership_months ?? 0,
+          ]
+        );
 
-    const [criada] = await db.select<Association[]>("SELECT * FROM associations WHERE id = $1", [id]);
-    return criada;
+        const [criada] = await db.select<Association[]>("SELECT * FROM associations WHERE id = $1", [id]);
+        return criada;
+      },
+      (criada) => ({
+        association_id: criada.id,
+        module: "INSTITUICAO",
+        description: `Associação cadastrada — ${criada.legal_name}`,
+      })
+    );
   }
 
   /**
@@ -150,13 +160,22 @@ export class AssociationModel {
   }
 
   static async update(id: string, dados: AtualizacaoAssociacao): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number | null);
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number | null);
 
-    await db.execute(`UPDATE associations SET ${sets} WHERE id = $1`, [id, ...valores]);
+        await db.execute(`UPDATE associations SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      () => ({
+        association_id: id,
+        module: "INSTITUICAO",
+        description: "Dados institucionais alterados",
+      })
+    );
   }
 }

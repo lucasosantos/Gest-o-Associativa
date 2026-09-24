@@ -3,6 +3,7 @@ import { connectToAssociation } from "../services/database.js";
 import { verifyAssociationPassword, type AssociationSummary } from "../services/config.js";
 import { AssociationModel, type MembershipMode } from "../models/Association.js";
 import { ParcelaModel } from "../models/Parcela.js";
+import { ActivityLogModel } from "../models/ActivityLog.js";
 
 /**
  * O app voltou a "1 arquivo `.db` por associação" (ver
@@ -102,6 +103,10 @@ export async function selectAssociation(entry: AssociationSummary, password?: st
   // arquivo vazio recém-criado).
   if (currentAssociationId.value) {
     await ParcelaModel.ensureAteMesAtual();
+    await ActivityLogModel.registrar({
+      module: "SISTEMA",
+      description: entry.has_password ? "Associação aberta (com senha)" : "Associação aberta",
+    });
   }
 }
 

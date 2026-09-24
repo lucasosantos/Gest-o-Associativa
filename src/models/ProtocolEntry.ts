@@ -3,6 +3,7 @@ import { newId } from "../services/id.js";
 import { ProtocolBookModel } from "./ProtocolBook.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { anoAtual } from "../utils/format.js";
+import { comAtividade } from "./ActivityLog.js";
 
 export type DirecaoProtocolo = "RECEBIDO" | "EXPEDIDO" | "INTERNO";
 export type StatusProtocolo = "ABERTO" | "EM_ANDAMENTO" | "RESPONDIDO" | "ENCERRADO" | "CANCELADO";
@@ -119,43 +120,69 @@ export class ProtocolEntryModel {
       throw new Error("Este livro está fechado e não aceita novos protocolos.");
     }
 
-    const db = await getDatabase();
-    const [{ numero }] = await db.select<{ numero: number }[]>(
-      "UPDATE protocol_books SET next_number = next_number + 1 WHERE id = $1 RETURNING next_number - 1 AS numero",
-      [livro.id]
-    );
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const [{ numero }] = await db.select<{ numero: number }[]>(
+          "UPDATE protocol_books SET next_number = next_number + 1 WHERE id = $1 RETURNING next_number - 1 AS numero",
+          [livro.id]
+        );
 
-    const id = newId();
-    await db.execute(
-      `INSERT INTO protocol_entries
-         (id, protocol_book_id, number, year, direction, document_type, protocol_date, sender_name, recipient_name,
-          subject, deadline, notes, response_protocol_id, member_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
-      [
-        id,
-        livro.id,
-        numero,
-        livro.year,
-        dados.direction,
-        livro.protocol_type,
-        dados.protocol_date,
-        dados.sender_name ?? null,
-        dados.recipient_name ?? null,
-        dados.subject,
-        dados.deadline ?? null,
-        dados.notes ?? null,
-        dados.response_protocol_id ?? null,
-        dados.member_id ?? null,
-      ]
-    );
+        const id = newId();
+        await db.execute(
+          `INSERT INTO protocol_entries
+             (id, protocol_book_id, number, year, direction, document_type, protocol_date, sender_name, recipient_name,
+              subject, deadline, notes, response_protocol_id, member_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+          [
+            id,
+            livro.id,
+            numero,
+            livro.year,
+            dados.direction,
+            livro.protocol_type,
+            dados.protocol_date,
+            dados.sender_name ?? null,
+            dados.recipient_name ?? null,
+            dados.subject,
+            dados.deadline ?? null,
+            dados.notes ?? null,
+            dados.response_protocol_id ?? null,
+            dados.member_id ?? null,
+          ]
+        );
 
-    const [criado] = await db.select<ProtocolEntry[]>("SELECT * FROM protocol_entries WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<ProtocolEntry[]>("SELECT * FROM protocol_entries WHERE id = $1", [id]);
+        return criado;
+      },
+      (entry) => ({
+        module: "PROTOCOLOS",
+        description: `Protocolo ${formatarNumeroProtocolo(entry, livro.prefix)} registrado — ${entry.direction.toLowerCase()} — ${
+          entry.subject
+        }`,
+        entity_type: "PROTOCOL_ENTRY",
+        entity_id: entry.id,
+      })
+    );
   }
 
   /** Muda a situação do protocolo (nunca exclui um registro lançado). */
   static async updateStatus(id: string, status: StatusProtocolo): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("UPDATE protocol_entries SET status = $2 WHERE id = $1", [id, status]);
+    const atual = await ProtocolEntryModel.get(id);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE protocol_entries SET status = $2 WHERE id = $1", [id, status]);
+      },
+      () => ({
+        module: "PROTOCOLOS",
+        description: `Situação do protocolo ${
+          atual ? formatarNumeroProtocolo(atual, atual.book_prefix) : id
+        } alterada para ${status.toLowerCase().replace("_", " ")}`,
+        entity_type: "PROTOCOL_ENTRY",
+        entity_id: id,
+      })
+    );
   }
 }

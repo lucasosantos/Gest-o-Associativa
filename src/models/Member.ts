@@ -5,6 +5,7 @@ import { PersonModel, type NovaPessoa, type AtualizacaoPessoa, type GeneroPessoa
 import { MembershipPaymentModel } from "./MembershipPayment.js";
 import { AssociationModel } from "./Association.js";
 import { hojeIso, somarMeses } from "../utils/format.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /** Situação do sócio (ver `docs/dominio-associacoes.md`, seção 2.2). */
 export type StatusSocio = "PENDENTE" | "ATIVO" | "INATIVO" | "SUSPENSO" | "DESLIGADO" | "FALECIDO";
@@ -255,52 +256,62 @@ export class MemberModel {
    * manual.
    */
   static async create(dados: NovoSocio): Promise<Member> {
-    const associationId = getCurrentAssociationId();
-    const associacao = await AssociationModel.get(associationId);
-    if (!associacao) throw new Error("Associação não encontrada.");
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const associacao = await AssociationModel.get(associationId);
+        if (!associacao) throw new Error("Associação não encontrada.");
 
-    let registrationNumber = dados.registration_number?.trim() || "";
-    if (associacao.auto_registration_number) {
-      registrationNumber = await AssociationModel.proximaMatricula(associationId);
-    } else if (!registrationNumber) {
-      throw new Error("Informe o número de matrícula.");
-    }
+        let registrationNumber = dados.registration_number?.trim() || "";
+        if (associacao.auto_registration_number) {
+          registrationNumber = await AssociationModel.proximaMatricula(associationId);
+        } else if (!registrationNumber) {
+          throw new Error("Informe o número de matrícula.");
+        }
 
-    const pessoa = await PersonModel.create({
-      full_name: dados.full_name,
-      birth_date: dados.birth_date,
-      nationality: dados.nationality,
-      marital_status: dados.marital_status,
-      cpf: dados.cpf,
-      rg: dados.rg,
-      profession: dados.profession,
-      mother_name: dados.mother_name,
-      father_name: dados.father_name,
-      gender: dados.gender,
-      notes: dados.notes,
-      photo: dados.photo,
-    });
+        const pessoa = await PersonModel.create({
+          full_name: dados.full_name,
+          birth_date: dados.birth_date,
+          nationality: dados.nationality,
+          marital_status: dados.marital_status,
+          cpf: dados.cpf,
+          rg: dados.rg,
+          profession: dados.profession,
+          mother_name: dados.mother_name,
+          father_name: dados.father_name,
+          gender: dados.gender,
+          notes: dados.notes,
+          photo: dados.photo,
+        });
 
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO members
-         (id, association_id, person_id, registration_number, association_date, observations, membership_plan_id, dues_start_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        id,
-        associationId,
-        pessoa.id,
-        registrationNumber,
-        dados.association_date,
-        dados.observations ?? null,
-        dados.membership_plan_id ?? null,
-        dados.dues_start_date ?? null,
-      ]
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO members
+             (id, association_id, person_id, registration_number, association_date, observations, membership_plan_id, dues_start_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            id,
+            associationId,
+            pessoa.id,
+            registrationNumber,
+            dados.association_date,
+            dados.observations ?? null,
+            dados.membership_plan_id ?? null,
+            dados.dues_start_date ?? null,
+          ]
+        );
+
+        const [criado] = await db.select<Member[]>("SELECT * FROM members WHERE id = $1", [id]);
+        return criado;
+      },
+      (socio) => ({
+        module: "SOCIOS",
+        description: `Novo sócio — ${dados.full_name} (matrícula ${socio.registration_number})`,
+        entity_type: "MEMBER",
+        entity_id: socio.id,
+      })
     );
-
-    const [criado] = await db.select<Member[]>("SELECT * FROM members WHERE id = $1", [id]);
-    return criado;
   }
 
   /** Atualiza os campos de `people` e/ou `members` presentes em `dados`. */
@@ -308,26 +319,36 @@ export class MemberModel {
     const atual = await MemberModel.get(id);
     if (!atual) throw new Error("Sócio não encontrado.");
 
-    const dadosPessoa: Record<string, unknown> = {};
-    const dadosSocio: Record<string, unknown> = {};
+    return comAtividade(
+      async () => {
+        const dadosPessoa: Record<string, unknown> = {};
+        const dadosSocio: Record<string, unknown> = {};
 
-    for (const [campo, valor] of Object.entries(dados)) {
-      if (valor === undefined) continue;
-      if ((CAMPOS_PESSOA as readonly string[]).includes(campo)) dadosPessoa[campo] = valor;
-      else if ((CAMPOS_SOCIO as readonly string[]).includes(campo)) dadosSocio[campo] = valor;
-    }
+        for (const [campo, valor] of Object.entries(dados)) {
+          if (valor === undefined) continue;
+          if ((CAMPOS_PESSOA as readonly string[]).includes(campo)) dadosPessoa[campo] = valor;
+          else if ((CAMPOS_SOCIO as readonly string[]).includes(campo)) dadosSocio[campo] = valor;
+        }
 
-    if (Object.keys(dadosPessoa).length > 0) {
-      await PersonModel.update(atual.person_id, dadosPessoa as AtualizacaoPessoa);
-    }
+        if (Object.keys(dadosPessoa).length > 0) {
+          await PersonModel.update(atual.person_id, dadosPessoa as AtualizacaoPessoa);
+        }
 
-    if (Object.keys(dadosSocio).length > 0) {
-      const db = await getDatabase();
-      const campos = Object.entries(dadosSocio);
-      const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-      const valores = campos.map(([, valor]) => valor as string | null);
-      await db.execute(`UPDATE members SET ${sets} WHERE id = $1`, [id, ...valores]);
-    }
+        if (Object.keys(dadosSocio).length > 0) {
+          const db = await getDatabase();
+          const campos = Object.entries(dadosSocio);
+          const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+          const valores = campos.map(([, valor]) => valor as string | null);
+          await db.execute(`UPDATE members SET ${sets} WHERE id = $1`, [id, ...valores]);
+        }
+      },
+      () => ({
+        module: "SOCIOS",
+        description: `Cadastro do sócio alterado — ${dados.full_name ?? atual.full_name}`,
+        entity_type: "MEMBER",
+        entity_id: id,
+      })
+    );
   }
 
   /**
@@ -346,18 +367,30 @@ export class MemberModel {
     const atual = await MemberModel.get(id);
     if (!atual) throw new Error("Sócio não encontrado.");
 
-    const db = await getDatabase();
-    await db.execute("UPDATE members SET status = $2, exit_date = $3, exit_reason = $4 WHERE id = $1", [
-      id,
-      novoStatus,
-      opcoes.exitDate ?? null,
-      opcoes.exitReason ?? null,
-    ]);
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE members SET status = $2, exit_date = $3, exit_reason = $4 WHERE id = $1", [
+          id,
+          novoStatus,
+          opcoes.exitDate ?? null,
+          opcoes.exitReason ?? null,
+        ]);
 
-    await db.execute(
-      `INSERT INTO member_status_history (id, member_id, old_status, new_status, effective_date, reason)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [newId(), id, atual.status, novoStatus, opcoes.effectiveDate, opcoes.reason ?? null]
+        await db.execute(
+          `INSERT INTO member_status_history (id, member_id, old_status, new_status, effective_date, reason)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [newId(), id, atual.status, novoStatus, opcoes.effectiveDate, opcoes.reason ?? null]
+        );
+      },
+      () => ({
+        module: "SOCIOS",
+        description: `Situação do sócio ${atual.full_name} alterada: ${atual.status} → ${novoStatus}${
+          opcoes.reason ? ` (${opcoes.reason})` : ""
+        }`,
+        entity_type: "MEMBER",
+        entity_id: id,
+      })
     );
   }
 

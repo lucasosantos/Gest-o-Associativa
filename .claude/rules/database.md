@@ -16,3 +16,11 @@
 - Não há ORM nem geração automática de tipos: cada model em `src/models/*.ts`
   espelha manualmente as colunas da tabela. Ao criar ou alterar uma migration,
   atualize também a interface do model correspondente.
+- Toda escrita feita por um model (criar, alterar, excluir, baixar...) deve
+  passar por `comAtividade(acao, descrever)` de
+  [ActivityLog.ts](../../src/models/ActivityLog.ts), pra entrar no histórico
+  de atividades (tela Atividades). Só a chamada mais externa registra — um
+  método que chama outros models vira uma linha só. Descrição em português,
+  legível pro usuário final, com o nome do registro (ex.: `Novo sócio — Lucas
+  (matrícula 12)`). `activity_logs` é imutável (triggers bloqueiam
+  UPDATE/DELETE).

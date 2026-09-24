@@ -13,7 +13,12 @@ import {
   type AssociationSummary,
 } from "../services/config.js";
 import { closeDatabase } from "../services/database.js";
-import { currentAssociationConfigId, clearCurrentAssociation } from "../composables/useCurrentAssociation.js";
+import {
+  currentAssociationConfigId,
+  clearCurrentAssociation,
+  isAssociationConnected,
+} from "../composables/useCurrentAssociation.js";
+import { ActivityLogModel } from "../models/ActivityLog.js";
 import { closeModal } from "../composables/useModal.js";
 import Spinner from "../components/Spinner.vue";
 
@@ -59,6 +64,24 @@ async function handleSubmit() {
       await setAssociationPassword(props.association.id, novaSenha.value.trim());
     }
 
+    // O histórico vive dentro do banco da associação: só dá pra registrar
+    // quando é ela que está conectada (e o banco não acabou de ser fechado
+    // pra mudar de lugar).
+    if (associacaoEstaAtiva && isAssociationConnected.value && !caminhoMudou) {
+      if (name.value.trim() !== props.association.name) {
+        await ActivityLogModel.registrar({
+          module: "SISTEMA",
+          description: `Associação renomeada na lista: ${props.association.name} → ${name.value.trim()}`,
+        });
+      }
+      if (novaSenha.value.trim()) {
+        await ActivityLogModel.registrar({
+          module: "SISTEMA",
+          description: props.association.has_password ? "Senha de acesso alterada" : "Senha de acesso definida",
+        });
+      }
+    }
+
     if (caminhoMudou) {
       precisaReiniciar.value = true;
     } else {
@@ -77,6 +100,9 @@ async function handleRemoverSenha() {
   erro.value = "";
   try {
     await setAssociationPassword(props.association.id, null);
+    if (currentAssociationConfigId.value === props.association.id && isAssociationConnected.value) {
+      await ActivityLogModel.registrar({ module: "SISTEMA", description: "Senha de acesso removida" });
+    }
     props.onSaved?.();
     closeModal();
   } catch (error) {

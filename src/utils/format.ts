@@ -158,3 +158,51 @@ export function formatarBytes(bytes: number): string {
   }
   return `${valor.toFixed(valor < 10 ? 1 : 0)} ${unidades[indice]}`;
 }
+
+const formatadorDataHora = new Intl.DateTimeFormat("pt-BR", {
+  day: "2-digit",
+  month: "2-digit",
+  year: "numeric",
+  hour: "2-digit",
+  minute: "2-digit",
+});
+
+/**
+ * Formata um `created_at` do banco (`"AAAA-MM-DD HH:MM:SS"`, sempre UTC —
+ * é o que `CURRENT_TIMESTAMP` grava) como `"DD/MM/AAAA HH:MM"` na hora
+ * LOCAL do computador. Diferente de `formatarData`, aqui a conversão de
+ * fuso é o comportamento desejado.
+ */
+export function formatarDataHora(timestampUtc: string): string {
+  return formatadorDataHora.format(new Date(`${timestampUtc.replace(" ", "T")}Z`)).replace(",", "");
+}
+
+const formatadorDiaPorExtenso = new Intl.DateTimeFormat("pt-BR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+  timeZone: "UTC",
+});
+
+/** Formata uma data ISO (`"AAAA-MM-DD"`) como `"quinta-feira, 24 de setembro de 2026"`. */
+export function formatarDiaPorExtenso(dataIso: string): string {
+  return formatadorDiaPorExtenso.format(new Date(`${dataIso}T00:00:00Z`));
+}
+
+/**
+ * Data atual no fuso LOCAL do computador (`"AAAA-MM-DD"`). Diferente de
+ * `hojeIso` (UTC): usada onde a data precisa bater com o `date(...,
+ * 'localtime')` do SQLite, como na tela Atividades.
+ */
+export function hojeLocalIso(): string {
+  const agora = new Date();
+  const mes = String(agora.getMonth() + 1).padStart(2, "0");
+  const dia = String(agora.getDate()).padStart(2, "0");
+  return `${agora.getFullYear()}-${mes}-${dia}`;
+}
+
+/** Só a hora local (`"HH:MM"`) de um `created_at` do banco (UTC) — ver `formatarDataHora`. */
+export function formatarHora(timestampUtc: string): string {
+  return formatarDataHora(timestampUtc).split(" ")[1] ?? "";
+}

@@ -3,7 +3,8 @@ import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { CashTransactionModel } from "./CashTransaction.js";
 import { criarReciboDeProtocolo } from "./MembershipPayment.js";
-import { formatarCompetencia } from "../utils/format.js";
+import { formatarCompetencia, formatarMoeda } from "../utils/format.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `membership_agreements` (migration `version: 16`) —
@@ -72,110 +73,122 @@ export class MembershipAgreementModel {
     if (dados.parcela_ids.length === 0) throw new Error("Selecione ao menos uma mensalidade para o acordo.");
     if (dados.negotiated_amount <= 0) throw new Error("Valor negociado deve ser maior que zero.");
 
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
 
-    const placeholdersExistentes = dados.parcela_ids.map((_, i) => `$${i + 2}`).join(", ");
-    const existentes = await db.select<{ id: string }[]>(
-      `SELECT id FROM membership_payments WHERE member_id = $1 AND parcela_id IN (${placeholdersExistentes})`,
-      [memberId, ...dados.parcela_ids]
+        const placeholdersExistentes = dados.parcela_ids.map((_, i) => `$${i + 2}`).join(", ");
+        const existentes = await db.select<{ id: string }[]>(
+          `SELECT id FROM membership_payments WHERE member_id = $1 AND parcela_id IN (${placeholdersExistentes})`,
+          [memberId, ...dados.parcela_ids]
+        );
+        if (existentes.length > 0) {
+          throw new Error("Uma ou mais mensalidades selecionadas já têm pagamento registrado.");
+        }
+
+        const placeholdersParcelas = dados.parcela_ids.map((_, i) => `$${i + 1}`).join(", ");
+        const parcelas = await db.select<{ id: string; competence_month: string }[]>(
+          `SELECT id, competence_month FROM parcelas WHERE id IN (${placeholdersParcelas}) ORDER BY competence_month`,
+          dados.parcela_ids
+        );
+        if (parcelas.length !== dados.parcela_ids.length) {
+          throw new Error("Uma ou mais competências selecionadas não foram encontradas.");
+        }
+
+        const [membro] = await db.select<{ full_name: string }[]>(
+          `SELECT pe.full_name AS full_name FROM members m JOIN people pe ON pe.id = m.person_id WHERE m.id = $1`,
+          [memberId]
+        );
+        const nomeSocio = membro?.full_name ?? null;
+
+        const meses = parcelas.map((p) => formatarCompetencia(p.competence_month));
+        const intervaloTexto = meses.length === 1 ? meses[0] : `${meses[0]} a ${meses[meses.length - 1]}`;
+
+        let receiptNumber: string | null = null;
+        let protocolEntryId: string | null = null;
+        if (dados.protocol_book_id) {
+          const recibo = await criarReciboDeProtocolo(dados.protocol_book_id, {
+            protocolDate: dados.agreement_date,
+            recipientName: nomeSocio,
+            subject: `Acordo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${intervaloTexto}`,
+            memberId,
+          });
+          receiptNumber = recibo.receiptNumber;
+          protocolEntryId = recibo.protocolEntryId;
+        }
+
+        const agreementId = newId();
+        const transacao = await CashTransactionModel.create({
+          financial_account_id: dados.financial_account_id,
+          transaction_type: "RECEITA",
+          amount: dados.negotiated_amount,
+          transaction_date: dados.agreement_date,
+          competence_date: parcelas[0].competence_month,
+          description: `Acordo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${intervaloTexto}`,
+          payment_method_id: dados.payment_method_id ?? null,
+          source_type: "MEMBERSHIP_AGREEMENT",
+          source_id: agreementId,
+        });
+
+        await db.execute(
+          `INSERT INTO membership_agreements
+             (id, association_id, member_id, original_amount, negotiated_amount, agreement_date, approved_by, notes)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            agreementId,
+            associationId,
+            memberId,
+            dados.original_amount,
+            dados.negotiated_amount,
+            dados.agreement_date,
+            dados.approved_by ?? null,
+            dados.notes ?? null,
+          ]
+        );
+
+        // Rateio em centavos: divisão inteira, sobra de arredondamento absorvida
+        // pela última parcela — soma bate exatamente com o valor negociado.
+        const quantidade = parcelas.length;
+        const valorBase = Math.floor(dados.negotiated_amount / quantidade);
+        const sobra = dados.negotiated_amount - valorBase * quantidade;
+
+        for (let i = 0; i < parcelas.length; i++) {
+          const valorParcela = valorBase + (i === parcelas.length - 1 ? sobra : 0);
+          await db.execute(
+            `INSERT INTO membership_payments
+               (id, association_id, member_id, parcela_id, cash_transaction_id, paid_amount, paid_at, payment_method,
+                receipt_number, protocol_entry_id, membership_agreement_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
+            [
+              newId(),
+              associationId,
+              memberId,
+              parcelas[i].id,
+              transacao.id,
+              valorParcela,
+              dados.agreement_date,
+              dados.payment_method_label ?? null,
+              receiptNumber,
+              protocolEntryId,
+              agreementId,
+            ]
+          );
+        }
+
+        const criado = await MembershipAgreementModel.get(agreementId);
+        if (!criado) throw new Error("Falha ao registrar o acordo.");
+        return criado;
+      },
+      (acordo) => ({
+        module: "MENSALIDADES",
+        description: `Acordo de mensalidade — ${acordo.full_name} — ${acordo.competence_months.length} mês(es) — ${formatarMoeda(
+          acordo.negotiated_amount
+        )}${acordo.receipt_number ? ` (recibo ${acordo.receipt_number})` : ""}`,
+        entity_type: "MEMBER",
+        entity_id: memberId,
+      })
     );
-    if (existentes.length > 0) {
-      throw new Error("Uma ou mais mensalidades selecionadas já têm pagamento registrado.");
-    }
-
-    const placeholdersParcelas = dados.parcela_ids.map((_, i) => `$${i + 1}`).join(", ");
-    const parcelas = await db.select<{ id: string; competence_month: string }[]>(
-      `SELECT id, competence_month FROM parcelas WHERE id IN (${placeholdersParcelas}) ORDER BY competence_month`,
-      dados.parcela_ids
-    );
-    if (parcelas.length !== dados.parcela_ids.length) {
-      throw new Error("Uma ou mais competências selecionadas não foram encontradas.");
-    }
-
-    const [membro] = await db.select<{ full_name: string }[]>(
-      `SELECT pe.full_name AS full_name FROM members m JOIN people pe ON pe.id = m.person_id WHERE m.id = $1`,
-      [memberId]
-    );
-    const nomeSocio = membro?.full_name ?? null;
-
-    const meses = parcelas.map((p) => formatarCompetencia(p.competence_month));
-    const intervaloTexto = meses.length === 1 ? meses[0] : `${meses[0]} a ${meses[meses.length - 1]}`;
-
-    let receiptNumber: string | null = null;
-    let protocolEntryId: string | null = null;
-    if (dados.protocol_book_id) {
-      const recibo = await criarReciboDeProtocolo(dados.protocol_book_id, {
-        protocolDate: dados.agreement_date,
-        recipientName: nomeSocio,
-        subject: `Acordo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${intervaloTexto}`,
-        memberId,
-      });
-      receiptNumber = recibo.receiptNumber;
-      protocolEntryId = recibo.protocolEntryId;
-    }
-
-    const agreementId = newId();
-    const transacao = await CashTransactionModel.create({
-      financial_account_id: dados.financial_account_id,
-      transaction_type: "RECEITA",
-      amount: dados.negotiated_amount,
-      transaction_date: dados.agreement_date,
-      competence_date: parcelas[0].competence_month,
-      description: `Acordo de mensalidade${nomeSocio ? ` — ${nomeSocio}` : ""} — ${intervaloTexto}`,
-      payment_method_id: dados.payment_method_id ?? null,
-      source_type: "MEMBERSHIP_AGREEMENT",
-      source_id: agreementId,
-    });
-
-    await db.execute(
-      `INSERT INTO membership_agreements
-         (id, association_id, member_id, original_amount, negotiated_amount, agreement_date, approved_by, notes)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        agreementId,
-        associationId,
-        memberId,
-        dados.original_amount,
-        dados.negotiated_amount,
-        dados.agreement_date,
-        dados.approved_by ?? null,
-        dados.notes ?? null,
-      ]
-    );
-
-    // Rateio em centavos: divisão inteira, sobra de arredondamento absorvida
-    // pela última parcela — soma bate exatamente com o valor negociado.
-    const quantidade = parcelas.length;
-    const valorBase = Math.floor(dados.negotiated_amount / quantidade);
-    const sobra = dados.negotiated_amount - valorBase * quantidade;
-
-    for (let i = 0; i < parcelas.length; i++) {
-      const valorParcela = valorBase + (i === parcelas.length - 1 ? sobra : 0);
-      await db.execute(
-        `INSERT INTO membership_payments
-           (id, association_id, member_id, parcela_id, cash_transaction_id, paid_amount, paid_at, payment_method,
-            receipt_number, protocol_entry_id, membership_agreement_id)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
-        [
-          newId(),
-          associationId,
-          memberId,
-          parcelas[i].id,
-          transacao.id,
-          valorParcela,
-          dados.agreement_date,
-          dados.payment_method_label ?? null,
-          receiptNumber,
-          protocolEntryId,
-          agreementId,
-        ]
-      );
-    }
-
-    const criado = await MembershipAgreementModel.get(agreementId);
-    if (!criado) throw new Error("Falha ao registrar o acordo.");
-    return criado;
   }
 
   /** Acordo com dados de sócio/competências, pra exibir/imprimir o recibo (ver `ImprimirReciboAcordo.vue`). */

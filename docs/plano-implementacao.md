@@ -1264,6 +1264,75 @@ Python/SQLite com a cadeia completa (16 migrations) + `cargo check`.
 Verificado: `cargo check`, `npx vue-tsc -b --force` e simulação Python das
 16 migrations, todos limpos ao final do lote inteiro.
 
+## Mudança pós-MVP — patrimônio e histórico de atividades ✅ concluída (2026-09-24)
+
+Pedido do usuário, duas coisas juntas. **Migration `version: 24`**
+(`patrimonio_e_historico_de_atividades`), só `CREATE TABLE`/`TRIGGER`.
+
+**1. Patrimônio** — `assets` (bem: nº de patrimônio único por associação,
+origem da aquisição `COMPRA`/`DOACAO`/`CESSAO`/`PRODUCAO_PROPRIA`/`OUTRO`,
+fornecedor/doador, valor, nota/termo, local, responsável, conservação,
+situação `EM_USO`/`EM_MANUTENCAO`/`EMPRESTADO`/`BAIXADO` e, quando baixado,
+tipo/data/motivo/valor/destinatário da baixa — um `CHECK` amarra os campos
+de baixa à situação) e `asset_events` (linha do tempo; substitui o
+`asset_movements` do dicionário original, que só previa transferência e
+baixa). Fluxo decidido: situação, local, responsável e conservação **não
+se editam direto** — mudam só por evento (movimentação, envio/retorno de
+manutenção, empréstimo/devolução, conservação, ocorrência, baixa, baixa
+desfeita), cada um permitido só a partir de certas situações
+(`EVENTOS_PERMITIDOS` em [Asset.ts](../src/models/Asset.ts)). Baixa exige
+motivo; baixa por engano se desfaz com justificativa (evento `REATIVACAO`,
+a baixa continua visível). Compra, custo de manutenção e venda podem gerar
+o lançamento no caixa na hora (`source_type = 'ASSET'`,
+`asset_events.cash_transaction_id`). Exclusão física só pra cadastro feito
+por engano, bloqueada se algum evento gerou lançamento. Documentos (nota
+fiscal, termo de doação, laudo) se vinculam pelo `document_links` já
+existente (`ASSET`). Telas: [Patrimonio.vue](../src/views/Patrimonio.vue)
+(`/patrimonio`) e [PatrimonioDetalhes.vue](../src/views/PatrimonioDetalhes.vue);
+modais `AssetForm`, `AssetEventForm`, `AssetDisposalForm`,
+`AssetReactivateForm` e o componente `CashEntryOption`. Relatório
+"Balanço de patrimônio" ([ImprimirBalancoPatrimonio.vue](../src/views/ImprimirBalancoPatrimonio.vue),
+rota `/patrimonio/balanco/imprimir`, botão na sidebar de Patrimônio): bens
+em posse agrupados por categoria com subtotal e total do valor de
+aquisição, seção opcional de bens baixados e linhas de assinatura.
+
+**2. Histórico de atividades** — `activity_logs` (módulo, descrição
+legível, `entity_type`/`entity_id` opcionais, `created_at` UTC com
+milissegundos). Imutável: triggers abortam `UPDATE`/`DELETE`. Sem usuário
+(o app não tem desde a `version: 9`). Gravado pelos models via
+`comAtividade(acao, descrever)` ([ActivityLog.ts](../src/models/ActivityLog.ts)):
+só a chamada **mais externa** registra, então uma ação composta (ex.:
+pagamento de mensalidade = lançamento de caixa + protocolo do recibo +
+pagamento) vira UMA linha. Falha ao gravar o histórico nunca desfaz nem
+quebra a ação. Coberto: sócios (cadastro, edição, situação, dependentes,
+representantes, contatos, endereços, importação por planilha — uma linha
+por sócio + resumo), mensalidades (pagamento, acordo, planos), financeiro
+(lançamentos, transferência, estorno, contas, categorias, centros de custo,
+formas de pagamento, fornecedores/pagadores/doadores, doações, contas a
+pagar/receber e baixas), documentos (cadastro, edição, situação, download,
+vínculos, tipos, registros institucionais), protocolos (livros, emissão,
+situação, fechamento automático de ano), patrimônio, instituição, abertura
+da associação, backup exportado e troca/remoção de senha. **Fora**:
+visualização de documento (continua só em `document_access_logs`),
+importação de backup (o banco é substituído) e mudança de local do arquivo
+(o banco é fechado antes). Tela [Atividades.vue](../src/views/Atividades.vue)
+(`/atividades`), paginada **por dia** (todas as atividades do dia em ordem
+cronológica; "Dia anterior"/"Próximo dia" pulam direto pro dia mais
+próximo com atividade — `ActivityLogModel.diaVizinho` —, abrindo em hoje
+ou no último dia com registro), filtro por módulo/texto, link pra ficha do
+sócio/documento/bem e impressão do dia com o cabeçalho da associação.
+
+**Regra daqui pra frente:** todo método novo de escrita em
+`src/models/*.ts` deve passar por `comAtividade` (ver
+`.claude/rules/database.md`).
+
+Validado: `npx vue-tsc -b --force` limpo, `cargo check`, e as 24
+migrations aplicadas em sequência num SQLite in-memory com
+`PRAGMA foreign_keys = ON` (`CHECK` de baixa incompleta e de data de baixa
+anterior à aquisição, `UNIQUE` do nº de patrimônio, FK impedindo apagar
+lançamento ligado a evento, cascade dos eventos ao excluir o bem, triggers
+bloqueando alteração/exclusão do histórico, filtro por data local).
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:
@@ -1271,8 +1340,8 @@ Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:
   de Sócios (2) e Documentos (7).
 - **Projetos** (`projects`, `project_expenses`, ...) — depende de
   Financeiro (3) e Contas a Pagar (5).
-- **Patrimônio** (`assets`, `asset_movements`) — praticamente
-  independente, pode entrar cedo.
+- ~~**Patrimônio** (`assets`, `asset_movements`)~~ ✅ concluído em
+  2026-09-24 (`assets` + `asset_events`, ver seção própria acima).
 - **Atendimento comunitário** (`service_cases`, ...) — só após Permissões
   (8) estar sólida (confidencialidade reforçada).
 - **Eventos** (`events`, `event_registrations`) — depende de Sócios e,

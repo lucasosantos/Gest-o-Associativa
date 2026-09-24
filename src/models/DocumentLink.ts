@@ -1,5 +1,6 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `document_links` (migration `version: 7`) — vínculo
@@ -125,20 +126,55 @@ export class DocumentLinkModel {
       throw new Error(`Tipo de entidade desconhecido: ${dados.entity_type}`);
     }
 
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO document_links (id, document_id, entity_type, entity_id, link_role)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, dados.document_id, dados.entity_type, dados.entity_id, dados.link_role ?? "ANEXO"]
-    );
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO document_links (id, document_id, entity_type, entity_id, link_role)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, dados.document_id, dados.entity_type, dados.entity_id, dados.link_role ?? "ANEXO"]
+        );
 
-    const [criado] = await db.select<DocumentLink[]>("SELECT * FROM document_links WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<DocumentLink[]>("SELECT * FROM document_links WHERE id = $1", [id]);
+        return criado;
+      },
+      async () => {
+        const [doc] = await (await getDatabase()).select<{ title: string }[]>("SELECT title FROM documents WHERE id = $1", [
+          dados.document_id,
+        ]);
+        return {
+          module: "DOCUMENTOS",
+          description: `Documento ${doc?.title ?? ""} vinculado a ${ROTULO_TIPO_ENTIDADE[dados.entity_type].toLowerCase()}`,
+          entity_type: "DOCUMENT",
+          entity_id: dados.document_id,
+        };
+      }
+    );
   }
 
   static async remove(id: string): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("DELETE FROM document_links WHERE id = $1", [id]);
+    const [vinculo] = await (await getDatabase()).select<(DocumentLink & { document_title: string })[]>(
+      `SELECT l.*, d.title AS document_title FROM document_links l JOIN documents d ON d.id = l.document_id WHERE l.id = $1`,
+      [id]
+    );
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("DELETE FROM document_links WHERE id = $1", [id]);
+      },
+      () =>
+        vinculo
+          ? {
+              module: "DOCUMENTOS",
+              description: `Vínculo removido — documento ${vinculo.document_title} × ${ROTULO_TIPO_ENTIDADE[
+                vinculo.entity_type
+              ].toLowerCase()}`,
+              entity_type: "DOCUMENT",
+              entity_id: vinculo.document_id,
+            }
+          : null
+    );
   }
 }

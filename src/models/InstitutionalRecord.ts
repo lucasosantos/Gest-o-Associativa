@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `records` (migration `version: 7`) — "registros
@@ -46,29 +47,49 @@ export class InstitutionalRecordModel {
   }
 
   static async create(dados: NovoRegistroInstitucional): Promise<InstitutionalRecord> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO records (id, association_id, record_type, reference_number, record_date, title, description)
-       VALUES ($1, $2, $3, $4, $5, $6, $7)`,
-      [
-        id,
-        associationId,
-        dados.record_type,
-        dados.reference_number ?? null,
-        dados.record_date,
-        dados.title,
-        dados.description ?? null,
-      ]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO records (id, association_id, record_type, reference_number, record_date, title, description)
+           VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+          [
+            id,
+            associationId,
+            dados.record_type,
+            dados.reference_number ?? null,
+            dados.record_date,
+            dados.title,
+            dados.description ?? null,
+          ]
+        );
 
-    const [criado] = await db.select<InstitutionalRecord[]>("SELECT * FROM records WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<InstitutionalRecord[]>("SELECT * FROM records WHERE id = $1", [id]);
+        return criado;
+      },
+      (registro) => ({
+        module: "DOCUMENTOS",
+        description: `Registro institucional cadastrado — ${registro.record_type}: ${registro.title}`,
+      })
+    );
   }
 
   static async updateStatus(id: string, status: StatusRegistro): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("UPDATE records SET status = $2 WHERE id = $1", [id, status]);
+    const [atual] = await (await getDatabase()).select<{ title: string }[]>("SELECT title FROM records WHERE id = $1", [id]);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE records SET status = $2 WHERE id = $1", [id, status]);
+      },
+      () => ({
+        module: "DOCUMENTOS",
+        description: `Registro institucional ${
+          { ATIVO: "reativado", ARQUIVADO: "arquivado", CANCELADO: "cancelado" }[status]
+        } — ${atual?.title ?? id}`,
+      })
+    );
   }
 }

@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `payees` (criada na migration `version: 3`, Etapa 3 —
@@ -36,16 +37,24 @@ export class PayeeModel {
   }
 
   static async create(dados: NovoFornecedor): Promise<Payee> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO payees (id, association_id, name, document_number, email, phone)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, associationId, dados.name, dados.document_number ?? null, dados.email ?? null, dados.phone ?? null]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO payees (id, association_id, name, document_number, email, phone)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, associationId, dados.name, dados.document_number ?? null, dados.email ?? null, dados.phone ?? null]
+        );
 
-    const [criado] = await db.select<Payee[]>("SELECT * FROM payees WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<Payee[]>("SELECT * FROM payees WHERE id = $1", [id]);
+        return criado;
+      },
+      (criado) => ({
+        module: "FINANCEIRO",
+        description: `Fornecedor cadastrado — ${criado.name}`,
+      })
+    );
   }
 }

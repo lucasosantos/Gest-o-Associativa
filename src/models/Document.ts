@@ -2,9 +2,17 @@ import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { importDocumentFile } from "../services/documentFiles.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /** Situação do documento (ver `docs/dominio-associacoes.md`, seção 2.7). */
 export type StatusDocumento = "ATIVO" | "ARQUIVADO" | "CANCELADO";
+
+/** Particípio usado no histórico de atividades ("Documento arquivado — ..."). */
+const ROTULO_STATUS_DOCUMENTO: Record<StatusDocumento, string> = {
+  ATIVO: "reativado",
+  ARQUIVADO: "arquivado",
+  CANCELADO: "cancelado",
+};
 
 /** Nível de confidencialidade — controla quem pode ver/baixar (Etapa 8 aplica a permissão de fato). */
 export type ConfidencialidadeDocumento = "PUBLICO" | "INTERNO" | "RESTRITO" | "CONFIDENCIAL";
@@ -136,29 +144,39 @@ export class DocumentModel {
 
   /** Cria o documento e já importa o arquivo escolhido — a única versão que o documento chega a ter. */
   static async create(dados: NovoDocumento): Promise<Document> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
 
-    await db.execute(
-      `INSERT INTO documents (id, association_id, document_type_id, title, description, confidentiality, document_date, expiration_date)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-      [
-        id,
-        associationId,
-        dados.document_type_id ?? null,
-        dados.title,
-        dados.description ?? null,
-        dados.confidentiality ?? "INTERNO",
-        dados.document_date ?? null,
-        dados.expiration_date ?? null,
-      ]
+        await db.execute(
+          `INSERT INTO documents (id, association_id, document_type_id, title, description, confidentiality, document_date, expiration_date)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+          [
+            id,
+            associationId,
+            dados.document_type_id ?? null,
+            dados.title,
+            dados.description ?? null,
+            dados.confidentiality ?? "INTERNO",
+            dados.document_date ?? null,
+            dados.expiration_date ?? null,
+          ]
+        );
+
+        await DocumentModel.criarVersao(id, dados.source_path);
+
+        const [criado] = await db.select<Document[]>("SELECT * FROM documents WHERE id = $1", [id]);
+        return criado;
+      },
+      (documento) => ({
+        module: "DOCUMENTOS",
+        description: `Documento cadastrado — ${documento.title}`,
+        entity_type: "DOCUMENT",
+        entity_id: documento.id,
+      })
     );
-
-    await DocumentModel.criarVersao(id, dados.source_path);
-
-    const [criado] = await db.select<Document[]>("SELECT * FROM documents WHERE id = $1", [id]);
-    return criado;
   }
 
   private static async criarVersao(documentId: string, sourcePath: string): Promise<DocumentVersion> {
@@ -189,27 +207,69 @@ export class DocumentModel {
   }
 
   static async update(id: string, dados: AtualizacaoDocumento): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    const [atual] = await (await getDatabase()).select<{ title: string }[]>("SELECT title FROM documents WHERE id = $1", [id]);
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | null);
-    await db.execute(`UPDATE documents SET ${sets} WHERE id = $1`, [id, ...valores]);
-    await DocumentModel.logAccess(id, "EDITOU_METADADOS");
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
+
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | null);
+        await db.execute(`UPDATE documents SET ${sets} WHERE id = $1`, [id, ...valores]);
+        await DocumentModel.logAccess(id, "EDITOU_METADADOS");
+      },
+      () => ({
+        module: "DOCUMENTOS",
+        description: `Dados do documento alterados — ${dados.title ?? atual?.title ?? id}`,
+        entity_type: "DOCUMENT",
+        entity_id: id,
+      })
+    );
   }
 
   static async updateStatus(id: string, status: StatusDocumento): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("UPDATE documents SET status = $2 WHERE id = $1", [id, status]);
+    const [atual] = await (await getDatabase()).select<{ title: string }[]>("SELECT title FROM documents WHERE id = $1", [id]);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE documents SET status = $2 WHERE id = $1", [id, status]);
+      },
+      () => ({
+        module: "DOCUMENTOS",
+        description: `Documento ${ROTULO_STATUS_DOCUMENTO[status]} — ${atual?.title ?? id}`,
+        entity_type: "DOCUMENT",
+        entity_id: id,
+      })
+    );
   }
 
   static async logAccess(documentId: string, action: AcaoAcessoDocumento): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("INSERT INTO document_access_logs (id, document_id, action) VALUES ($1, $2, $3)", [
-      newId(),
-      documentId,
-      action,
-    ]);
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("INSERT INTO document_access_logs (id, document_id, action) VALUES ($1, $2, $3)", [
+          newId(),
+          documentId,
+          action,
+        ]);
+      },
+      async () => {
+        // Visualizar não altera nada — fica só no log de acesso do documento.
+        // Baixar gera uma cópia do arquivo fora do sistema, então entra no histórico.
+        if (action !== "BAIXOU") return null;
+        const [doc] = await (await getDatabase()).select<{ title: string }[]>("SELECT title FROM documents WHERE id = $1", [
+          documentId,
+        ]);
+        return {
+          module: "DOCUMENTOS",
+          description: `Arquivo do documento baixado — ${doc?.title ?? documentId}`,
+          entity_type: "DOCUMENT",
+          entity_id: documentId,
+        };
+      }
+    );
   }
 }

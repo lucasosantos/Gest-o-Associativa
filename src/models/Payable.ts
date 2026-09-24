@@ -3,6 +3,8 @@ import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { CashTransactionModel } from "./CashTransaction.js";
 import { gerarParcelasIguais } from "../utils/installments.js";
+import { comAtividade } from "./ActivityLog.js";
+import { formatarMoeda } from "../utils/format.js";
 
 export type StatusPayable = "ABERTA" | "APROVACAO_PENDENTE" | "PARCIAL" | "PAGA" | "CANCELADA";
 export type StatusPayableInstallment = "ABERTA" | "PARCIAL" | "PAGA" | "CANCELADA";
@@ -96,37 +98,45 @@ export class PayableModel {
   }
 
   static async create(dados: NovaContaPagar): Promise<Payable> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
 
-    await db.execute(
-      `INSERT INTO payables (id, association_id, payee_id, description, document_number, issue_date, total_amount, financial_category_id, cost_center_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-      [
-        id,
-        associationId,
-        dados.payee_id ?? null,
-        dados.description,
-        dados.document_number ?? null,
-        dados.issue_date ?? null,
-        dados.total_amount,
-        dados.financial_category_id ?? null,
-        dados.cost_center_id ?? null,
-      ]
+        await db.execute(
+          `INSERT INTO payables (id, association_id, payee_id, description, document_number, issue_date, total_amount, financial_category_id, cost_center_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
+          [
+            id,
+            associationId,
+            dados.payee_id ?? null,
+            dados.description,
+            dados.document_number ?? null,
+            dados.issue_date ?? null,
+            dados.total_amount,
+            dados.financial_category_id ?? null,
+            dados.cost_center_id ?? null,
+          ]
+        );
+
+        const parcelas = gerarParcelasIguais(dados.total_amount, dados.installments, dados.first_due_date);
+        for (const parcela of parcelas) {
+          await db.execute(
+            `INSERT INTO payable_installments (id, payable_id, installment_number, due_date, original_amount)
+             VALUES ($1, $2, $3, $4, $5)`,
+            [newId(), id, parcela.installment_number, parcela.due_date, parcela.original_amount]
+          );
+        }
+
+        const [criada] = await db.select<Payable[]>("SELECT * FROM payables WHERE id = $1", [id]);
+        return criada;
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Conta a pagar cadastrada — ${dados.description} — ${formatarMoeda(dados.total_amount)} em ${dados.installments}x`,
+      })
     );
-
-    const parcelas = gerarParcelasIguais(dados.total_amount, dados.installments, dados.first_due_date);
-    for (const parcela of parcelas) {
-      await db.execute(
-        `INSERT INTO payable_installments (id, payable_id, installment_number, due_date, original_amount)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [newId(), id, parcela.installment_number, parcela.due_date, parcela.original_amount]
-      );
-    }
-
-    const [criada] = await db.select<Payable[]>("SELECT * FROM payables WHERE id = $1", [id]);
-    return criada;
   }
 
   /**
@@ -150,36 +160,44 @@ export class PayableModel {
     if (valorPago <= 0) throw new Error("Valor a pagar deve ser maior que zero.");
     if (valorPago > restante) throw new Error("Valor a pagar não pode ser maior que o saldo restante da parcela.");
 
-    const transacao = await CashTransactionModel.create({
-      financial_account_id: dados.financial_account_id,
-      transaction_type: "DESPESA",
-      amount: valorPago,
-      transaction_date: dados.payment_date,
-      competence_date: dados.payment_date,
-      description: `Pagamento ${parcela.installment_number}/${(await PayableModel.installments(payable.id)).length} — ${payable.description}`,
-      financial_category_id: payable.financial_category_id,
-      cost_center_id: payable.cost_center_id,
-      payment_method_id: dados.payment_method_id ?? null,
-      source_type: "PAYABLE_INSTALLMENT",
-      source_id: installmentId,
-    });
+    return comAtividade(
+      async () => {
+        const transacao = await CashTransactionModel.create({
+          financial_account_id: dados.financial_account_id,
+          transaction_type: "DESPESA",
+          amount: valorPago,
+          transaction_date: dados.payment_date,
+          competence_date: dados.payment_date,
+          description: `Pagamento ${parcela.installment_number}/${(await PayableModel.installments(payable.id)).length} — ${payable.description}`,
+          financial_category_id: payable.financial_category_id,
+          cost_center_id: payable.cost_center_id,
+          payment_method_id: dados.payment_method_id ?? null,
+          source_type: "PAYABLE_INSTALLMENT",
+          source_id: installmentId,
+        });
 
-    await db.execute(
-      `INSERT INTO payable_payments (id, payable_installment_id, cash_transaction_id, amount, paid_at)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [newId(), installmentId, transacao.id, valorPago, dados.payment_date]
+        await db.execute(
+          `INSERT INTO payable_payments (id, payable_installment_id, cash_transaction_id, amount, paid_at)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [newId(), installmentId, transacao.id, valorPago, dados.payment_date]
+        );
+
+        const novoPago = parcela.paid_amount + valorPago;
+        const quitada = novoPago >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
+        await db.execute("UPDATE payable_installments SET paid_amount = $2, status = $3, paid_at = $4 WHERE id = $1", [
+          installmentId,
+          novoPago,
+          quitada ? "PAGA" : "PARCIAL",
+          quitada ? dados.payment_date : null,
+        ]);
+
+        await PayableModel.refreshStatus(payable.id);
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Pagamento de conta — ${payable.description} — parcela ${parcela.installment_number} — ${formatarMoeda(valorPago)}`,
+      })
     );
-
-    const novoPago = parcela.paid_amount + valorPago;
-    const quitada = novoPago >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
-    await db.execute("UPDATE payable_installments SET paid_amount = $2, status = $3, paid_at = $4 WHERE id = $1", [
-      installmentId,
-      novoPago,
-      quitada ? "PAGA" : "PARCIAL",
-      quitada ? dados.payment_date : null,
-    ]);
-
-    await PayableModel.refreshStatus(payable.id);
   }
 
   /** Recalcula `payables.status` a partir da situação de todas as parcelas. */

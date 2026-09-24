@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `payers` (criada na migration `version: 3`, Etapa 3, e só
@@ -34,16 +35,24 @@ export class PayerModel {
   }
 
   static async create(dados: NovoPagador): Promise<Payer> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO payers (id, association_id, name, document_number, email, phone)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, associationId, dados.name, dados.document_number ?? null, dados.email ?? null, dados.phone ?? null]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO payers (id, association_id, name, document_number, email, phone)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, associationId, dados.name, dados.document_number ?? null, dados.email ?? null, dados.phone ?? null]
+        );
 
-    const [criado] = await db.select<Payer[]>("SELECT * FROM payers WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<Payer[]>("SELECT * FROM payers WHERE id = $1", [id]);
+        return criado;
+      },
+      (criado) => ({
+        module: "FINANCEIRO",
+        description: `Pagador cadastrado — ${criado.name}`,
+      })
+    );
   }
 }

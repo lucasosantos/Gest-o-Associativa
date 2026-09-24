@@ -83,6 +83,34 @@ export const routes: RouteRecordRaw[] = [
     meta: { label: "Documentos", icon: "file" },
   },
   {
+    path: "/patrimonio",
+    name: "patrimonio",
+    component: () => import("../views/Patrimonio.vue"),
+    meta: { label: "Patrimônio", icon: "box" },
+  },
+  {
+    path: "/patrimonio/balanco/imprimir",
+    name: "balanco-patrimonio-imprimir",
+    component: () => import("../views/ImprimirBalancoPatrimonio.vue"),
+    // Sem meta.label: só alcançável pelo botão da sidebar de Patrimônio.
+    // Declarada antes de `/patrimonio/:id` pra "balanco" não virar um id.
+    meta: { hidden: true },
+  },
+  {
+    path: "/patrimonio/:id",
+    name: "patrimonio-detalhes",
+    component: () => import("../views/PatrimonioDetalhes.vue"),
+    // Sem meta.label: só alcançável a partir da lista de Patrimônio (ou de
+    // um link na tela Atividades).
+    meta: { hidden: true },
+  },
+  {
+    path: "/atividades",
+    name: "atividades",
+    component: () => import("../views/Atividades.vue"),
+    meta: { label: "Atividades", icon: "clock" },
+  },
+  {
     path: "/documentos/:id",
     name: "documento-detalhes",
     component: () => import("../views/DocumentoDetalhes.vue"),

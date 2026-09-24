@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { closeDatabase, connectToAssociation, getCurrentDbPath, getDatabase } from "./database.js";
+import { ActivityLogModel } from "../models/ActivityLog.js";
 
 /** Espelha `ResumoBackup` de `src-tauri/src/backup.rs`. */
 export interface ResumoBackup {
@@ -18,7 +19,9 @@ export async function exportarBackup(destPath: string): Promise<ResumoBackup> {
   const snapshot = await invoke<string>("prepare_backup_snapshot", { dbPath });
   const db = await getDatabase();
   await db.execute("VACUUM INTO $1", [snapshot]);
-  return invoke<ResumoBackup>("export_backup", { dbPath, destPath });
+  const resumo = await invoke<ResumoBackup>("export_backup", { dbPath, destPath });
+  await ActivityLogModel.registrar({ module: "SISTEMA", description: `Backup exportado — ${destPath}` });
+  return resumo;
 }
 
 /**

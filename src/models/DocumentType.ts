@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `document_types` (migration `version: 7`). Classifica os
@@ -51,29 +52,47 @@ export class DocumentTypeModel {
   }
 
   static async create(dados: NovoTipoDocumento): Promise<DocumentType> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO document_types (id, association_id, name, retention_period_months, requires_expiration, is_confidential)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [
-        id,
-        associationId,
-        dados.name,
-        dados.retention_period_months ?? null,
-        dados.requires_expiration ? 1 : 0,
-        dados.is_confidential ? 1 : 0,
-      ]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO document_types (id, association_id, name, retention_period_months, requires_expiration, is_confidential)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [
+            id,
+            associationId,
+            dados.name,
+            dados.retention_period_months ?? null,
+            dados.requires_expiration ? 1 : 0,
+            dados.is_confidential ? 1 : 0,
+          ]
+        );
 
-    const [criado] = await db.select<DocumentType[]>("SELECT * FROM document_types WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<DocumentType[]>("SELECT * FROM document_types WHERE id = $1", [id]);
+        return criado;
+      },
+      (tipo) => ({
+        module: "DOCUMENTOS",
+        description: `Tipo de documento cadastrado — ${tipo.name}`,
+      })
+    );
   }
 
   static async setActive(id: string, ativo: boolean): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("UPDATE document_types SET is_active = $2 WHERE id = $1", [id, ativo ? 1 : 0]);
+    const [atual] = await (await getDatabase()).select<{ name: string }[]>("SELECT name FROM document_types WHERE id = $1", [id]);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE document_types SET is_active = $2 WHERE id = $1", [id, ativo ? 1 : 0]);
+      },
+      () => ({
+        module: "DOCUMENTOS",
+        description: `Tipo de documento ${ativo ? "reativado" : "desativado"} — ${atual?.name ?? id}`,
+      })
+    );
   }
 
   /**
@@ -83,8 +102,16 @@ export class DocumentTypeModel {
    * ainda não existe nenhum tipo na tabela.
    */
   static async seedPadrao(): Promise<void> {
-    for (const name of NOMES_TIPOS_PADRAO) {
-      await DocumentTypeModel.create({ name });
-    }
+    return comAtividade(
+      async () => {
+        for (const name of NOMES_TIPOS_PADRAO) {
+          await DocumentTypeModel.create({ name });
+        }
+      },
+      () => ({
+        module: "DOCUMENTOS",
+        description: `Tipos de documento padrão cadastrados — ${NOMES_TIPOS_PADRAO.join(", ")}`,
+      })
+    );
   }
 }

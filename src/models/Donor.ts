@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
 
 /** Espelha a tabela `donors` (migration `version: 4`). */
 export interface Donor {
@@ -45,16 +46,24 @@ export class DonorModel {
   }
 
   static async create(dados: NovoDoador): Promise<Donor> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO donors (id, association_id, name, document_number, contact_data, notes)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, associationId, dados.name, dados.document_number ?? null, dados.contact_data ?? null, dados.notes ?? null]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO donors (id, association_id, name, document_number, contact_data, notes)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, associationId, dados.name, dados.document_number ?? null, dados.contact_data ?? null, dados.notes ?? null]
+        );
 
-    const [criado] = await db.select<Donor[]>("SELECT * FROM donors WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<Donor[]>("SELECT * FROM donors WHERE id = $1", [id]);
+        return criado;
+      },
+      (criado) => ({
+        module: "FINANCEIRO",
+        description: `Doador cadastrado — ${criado.name}`,
+      })
+    );
   }
 }

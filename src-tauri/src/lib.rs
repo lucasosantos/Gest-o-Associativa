@@ -1433,6 +1433,118 @@ fn all_migrations() -> Vec<Migration> {
                 CHECK (voting_min_membership_months >= 0);
         ",
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 24,
+        description: "patrimonio_e_historico_de_atividades",
+        // Pedido do usuário, duas coisas juntas:
+        //
+        // 1. Patrimônio (bloco da Fase 2 do plano): `assets` é o bem, com a
+        //    origem da aquisição e, quando baixado, tipo/data/motivo da
+        //    baixa (o `CHECK` final amarra os três à situação `BAIXADO`).
+        //    Situação, local, responsável e conservação NÃO se editam
+        //    direto — mudam por um evento em `asset_events`, que é a linha
+        //    do tempo do bem (aquisição, movimentação, manutenção,
+        //    empréstimo, baixa...). `cash_transaction_id` liga o evento ao
+        //    lançamento de caixa quando a compra/venda/manutenção foi
+        //    lançada no financeiro.
+        //
+        // 2. Histórico de atividades: `activity_logs` recebe uma linha por
+        //    ação feita no sistema (ver `ActivityLogModel`). Diferente da
+        //    `audit_logs` removida na `version: 9`, não tem usuário (o app
+        //    não tem) — é só "quando + o quê". Imutável: os dois triggers
+        //    abortam qualquer UPDATE/DELETE, então nem um bug no app
+        //    consegue reescrever o passado. `created_at` com milissegundos
+        //    pra ordenar direito ações feitas no mesmo segundo (UTC, como
+        //    todo `created_at` do banco — convertido pra hora local na tela).
+        sql: "
+            CREATE TABLE assets (
+                id TEXT PRIMARY KEY,
+                association_id TEXT NOT NULL REFERENCES associations(id),
+                asset_number TEXT NOT NULL,
+                name TEXT NOT NULL,
+                description TEXT,
+                category TEXT,
+                serial_number TEXT,
+                acquisition_date TEXT NOT NULL,
+                acquisition_origin TEXT NOT NULL
+                    CHECK (acquisition_origin IN ('COMPRA', 'DOACAO', 'CESSAO', 'PRODUCAO_PROPRIA', 'OUTRO')),
+                acquisition_source TEXT,
+                acquisition_value INTEGER CHECK (acquisition_value IS NULL OR acquisition_value >= 0),
+                acquisition_document TEXT,
+                location TEXT,
+                responsible TEXT,
+                condition TEXT NOT NULL DEFAULT 'BOM'
+                    CHECK (condition IN ('NOVO', 'BOM', 'REGULAR', 'RUIM', 'INSERVIVEL')),
+                status TEXT NOT NULL DEFAULT 'EM_USO'
+                    CHECK (status IN ('EM_USO', 'EM_MANUTENCAO', 'EMPRESTADO', 'BAIXADO')),
+                disposal_type TEXT
+                    CHECK (disposal_type IS NULL OR disposal_type IN ('VENDA', 'DOACAO', 'DESCARTE', 'PERDA', 'FURTO_ROUBO', 'OUTRO')),
+                disposal_date TEXT,
+                disposal_reason TEXT,
+                disposal_value INTEGER CHECK (disposal_value IS NULL OR disposal_value >= 0),
+                disposal_recipient TEXT,
+                observations TEXT,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (association_id, asset_number),
+                CHECK (
+                    (status = 'BAIXADO' AND disposal_type IS NOT NULL AND disposal_date IS NOT NULL AND disposal_reason IS NOT NULL)
+                    OR (status <> 'BAIXADO' AND disposal_type IS NULL AND disposal_date IS NULL)
+                ),
+                CHECK (disposal_date IS NULL OR disposal_date >= acquisition_date)
+            );
+
+            CREATE TRIGGER trg_assets_updated_at
+            AFTER UPDATE ON assets
+            BEGIN
+                UPDATE assets SET updated_at = CURRENT_TIMESTAMP WHERE id = NEW.id;
+            END;
+
+            CREATE INDEX idx_assets_association ON assets(association_id, status);
+
+            CREATE TABLE asset_events (
+                id TEXT PRIMARY KEY,
+                asset_id TEXT NOT NULL REFERENCES assets(id) ON DELETE CASCADE,
+                event_type TEXT NOT NULL
+                    CHECK (event_type IN ('AQUISICAO', 'TRANSFERENCIA', 'MANUTENCAO_ENVIO', 'MANUTENCAO_RETORNO',
+                                          'EMPRESTIMO', 'DEVOLUCAO', 'CONSERVACAO', 'OCORRENCIA', 'BAIXA', 'REATIVACAO')),
+                event_date TEXT NOT NULL,
+                description TEXT NOT NULL,
+                amount INTEGER CHECK (amount IS NULL OR amount >= 0),
+                cash_transaction_id TEXT REFERENCES cash_transactions(id),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            );
+
+            CREATE INDEX idx_asset_events_asset ON asset_events(asset_id, event_date DESC, created_at DESC);
+
+            CREATE TABLE activity_logs (
+                id TEXT PRIMARY KEY,
+                association_id TEXT NOT NULL REFERENCES associations(id),
+                module TEXT NOT NULL
+                    CHECK (module IN ('SOCIOS', 'MENSALIDADES', 'FINANCEIRO', 'DOCUMENTOS', 'PROTOCOLOS',
+                                      'PATRIMONIO', 'INSTITUICAO', 'SISTEMA')),
+                description TEXT NOT NULL,
+                entity_type TEXT,
+                entity_id TEXT,
+                created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%d %H:%M:%f', 'now'))
+            );
+
+            CREATE INDEX idx_activity_logs_created ON activity_logs(association_id, created_at DESC);
+            CREATE INDEX idx_activity_logs_entity ON activity_logs(entity_type, entity_id);
+
+            CREATE TRIGGER trg_activity_logs_sem_update
+            BEFORE UPDATE ON activity_logs
+            BEGIN
+                SELECT RAISE(ABORT, 'O histórico de atividades não pode ser alterado.');
+            END;
+
+            CREATE TRIGGER trg_activity_logs_sem_delete
+            BEFORE DELETE ON activity_logs
+            BEGIN
+                SELECT RAISE(ABORT, 'O histórico de atividades não pode ser apagado.');
+            END;
+        ",
+        kind: MigrationKind::Up,
     }]
 }
 

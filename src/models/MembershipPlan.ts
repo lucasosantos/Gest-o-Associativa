@@ -1,6 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade, verboAtualizacao } from "./ActivityLog.js";
 
 /**
  * Espelha a tabela `membership_plans` (migration `version: 20`) — plano de
@@ -49,32 +50,60 @@ export class MembershipPlanModel {
   }
 
   static async create(dados: NovoPlano): Promise<MembershipPlan> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO membership_plans (id, association_id, name, description, amount)
-       VALUES ($1, $2, $3, $4, $5)`,
-      [id, associationId, dados.name, dados.description ?? null, dados.amount]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO membership_plans (id, association_id, name, description, amount)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [id, associationId, dados.name, dados.description ?? null, dados.amount]
+        );
 
-    const [criado] = await db.select<MembershipPlan[]>("SELECT * FROM membership_plans WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<MembershipPlan[]>("SELECT * FROM membership_plans WHERE id = $1", [id]);
+        return criado;
+      },
+      (criado) => ({
+        module: "MENSALIDADES",
+        description: `Plano de mensalidade cadastrado — ${criado.name}`,
+      })
+    );
   }
 
   static async update(id: string, dados: AtualizacaoPlano): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    const [atual] = await (await getDatabase()).select<{ name: string }[]>("SELECT name FROM membership_plans WHERE id = $1", [id]);
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number | null);
-    await db.execute(`UPDATE membership_plans SET ${sets} WHERE id = $1`, [id, ...valores]);
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
+
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number | null);
+        await db.execute(`UPDATE membership_plans SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      () => ({
+        module: "MENSALIDADES",
+        description: `Plano de mensalidade ${verboAtualizacao(dados, "o")} — ${dados.name ?? atual?.name ?? id}`,
+      })
+    );
   }
 
   static async setActive(id: string, ativo: boolean): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("UPDATE membership_plans SET is_active = $2 WHERE id = $1", [id, ativo ? 1 : 0]);
+    const [atual] = await (await getDatabase()).select<{ name: string }[]>("SELECT name FROM membership_plans WHERE id = $1", [id]);
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("UPDATE membership_plans SET is_active = $2 WHERE id = $1", [id, ativo ? 1 : 0]);
+      },
+      () => ({
+        module: "MENSALIDADES",
+        description: `Plano de mensalidade ${ativo ? "reativado" : "desativado"} — ${atual?.name ?? id}`,
+      })
+    );
   }
 
   /**

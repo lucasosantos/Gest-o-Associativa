@@ -1,6 +1,8 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
+import { comAtividade } from "./ActivityLog.js";
+import { formatarMoeda } from "../utils/format.js";
 
 /** Tipo de movimento de caixa (ver migration `version: 3`). */
 export type TipoLancamento = "RECEITA" | "DESPESA" | "TRANSFERENCIA_ENTRADA" | "TRANSFERENCIA_SAIDA" | "ESTORNO";
@@ -169,33 +171,43 @@ export class CashTransactionModel {
   }
 
   static async create(dados: NovoLancamento): Promise<CashTransaction> {
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO cash_transactions
-         (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date,
-          description, financial_category_id, cost_center_id, payment_method_id, source_type, source_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
-      [
-        id,
-        associationId,
-        dados.financial_account_id,
-        dados.transaction_type,
-        dados.amount,
-        dados.transaction_date,
-        dados.competence_date,
-        dados.description,
-        dados.financial_category_id ?? null,
-        dados.cost_center_id ?? null,
-        dados.payment_method_id ?? null,
-        dados.source_type ?? null,
-        dados.source_id ?? null,
-      ]
-    );
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO cash_transactions
+             (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date,
+              description, financial_category_id, cost_center_id, payment_method_id, source_type, source_id)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+          [
+            id,
+            associationId,
+            dados.financial_account_id,
+            dados.transaction_type,
+            dados.amount,
+            dados.transaction_date,
+            dados.competence_date,
+            dados.description,
+            dados.financial_category_id ?? null,
+            dados.cost_center_id ?? null,
+            dados.payment_method_id ?? null,
+            dados.source_type ?? null,
+            dados.source_id ?? null,
+          ]
+        );
 
-    const [criado] = await db.select<CashTransaction[]>("SELECT * FROM cash_transactions WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<CashTransaction[]>("SELECT * FROM cash_transactions WHERE id = $1", [id]);
+        return criado;
+      },
+      (lancamento) => ({
+        module: "FINANCEIRO",
+        description: `${dados.transaction_type === "RECEITA" ? "Receita" : "Despesa"} lançada — ${dados.description} — ${formatarMoeda(dados.amount)}`,
+        entity_type: "CASH_TRANSACTION",
+        entity_id: lancamento.id,
+      })
+    );
   }
 
   /**
@@ -209,22 +221,30 @@ export class CashTransactionModel {
       throw new Error("A conta de origem e a de destino não podem ser a mesma.");
     }
 
-    const associationId = getCurrentAssociationId();
-    const db = await getDatabase();
-    const grupo = newId();
+    return comAtividade(
+      async () => {
+        const associationId = getCurrentAssociationId();
+        const db = await getDatabase();
+        const grupo = newId();
 
-    await db.execute(
-      `INSERT INTO cash_transactions
-         (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date, description, transfer_group_id)
-       VALUES ($1, $2, $3, 'TRANSFERENCIA_SAIDA', $4, $5, $5, $6, $7)`,
-      [newId(), associationId, dados.from_account_id, dados.amount, dados.transaction_date, dados.description, grupo]
-    );
+        await db.execute(
+          `INSERT INTO cash_transactions
+             (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date, description, transfer_group_id)
+           VALUES ($1, $2, $3, 'TRANSFERENCIA_SAIDA', $4, $5, $5, $6, $7)`,
+          [newId(), associationId, dados.from_account_id, dados.amount, dados.transaction_date, dados.description, grupo]
+        );
 
-    await db.execute(
-      `INSERT INTO cash_transactions
-         (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date, description, transfer_group_id)
-       VALUES ($1, $2, $3, 'TRANSFERENCIA_ENTRADA', $4, $5, $5, $6, $7)`,
-      [newId(), associationId, dados.to_account_id, dados.amount, dados.transaction_date, dados.description, grupo]
+        await db.execute(
+          `INSERT INTO cash_transactions
+             (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date, description, transfer_group_id)
+           VALUES ($1, $2, $3, 'TRANSFERENCIA_ENTRADA', $4, $5, $5, $6, $7)`,
+          [newId(), associationId, dados.to_account_id, dados.amount, dados.transaction_date, dados.description, grupo]
+        );
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Transferência entre contas — ${dados.description} — ${formatarMoeda(dados.amount)}`,
+      })
     );
   }
 
@@ -246,31 +266,43 @@ export class CashTransactionModel {
       throw new Error("Um estorno não pode ser estornado.");
     }
 
-    const db = await getDatabase();
-    const reversalId = newId();
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const reversalId = newId();
 
-    await db.execute(
-      `INSERT INTO cash_transactions
-         (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date,
-          description, source_type, source_id)
-       VALUES ($1, $2, $3, 'ESTORNO', $4, $5, $5, $6, 'CASH_TRANSACTION_REVERSAL', $7)`,
-      [
-        reversalId,
-        original.association_id,
-        original.financial_account_id,
-        original.amount,
-        new Date().toISOString().slice(0, 10),
-        `Estorno de: ${original.description}`,
-        original.id,
-      ]
-    );
+        await db.execute(
+          `INSERT INTO cash_transactions
+             (id, association_id, financial_account_id, transaction_type, amount, transaction_date, competence_date,
+              description, source_type, source_id)
+           VALUES ($1, $2, $3, 'ESTORNO', $4, $5, $5, $6, 'CASH_TRANSACTION_REVERSAL', $7)`,
+          [
+            reversalId,
+            original.association_id,
+            original.financial_account_id,
+            original.amount,
+            new Date().toISOString().slice(0, 10),
+            `Estorno de: ${original.description}`,
+            original.id,
+          ]
+        );
 
-    await db.execute("UPDATE cash_transactions SET status = 'ESTORNADA' WHERE id = $1", [id]);
+        await db.execute("UPDATE cash_transactions SET status = 'ESTORNADA' WHERE id = $1", [id]);
 
-    await db.execute(
-      `INSERT INTO cash_transaction_reversals (id, original_transaction_id, reversal_transaction_id, reason)
-       VALUES ($1, $2, $3, $4)`,
-      [newId(), id, reversalId, reason ?? null]
+        await db.execute(
+          `INSERT INTO cash_transaction_reversals (id, original_transaction_id, reversal_transaction_id, reason)
+           VALUES ($1, $2, $3, $4)`,
+          [newId(), id, reversalId, reason ?? null]
+        );
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Lançamento estornado — ${original.description} — ${formatarMoeda(original.amount)}${
+          reason ? ` (motivo: ${reason})` : ""
+        }`,
+        entity_type: "CASH_TRANSACTION",
+        entity_id: id,
+      })
     );
   }
 }

@@ -1,5 +1,6 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
+import { comAtividade, nomeDaPessoa } from "./ActivityLog.js";
 
 /** Tipo de contato de uma pessoa (ver migration `version: 2`). */
 export type TipoContato = "TELEFONE" | "CELULAR" | "EMAIL" | "OUTRO";
@@ -37,31 +38,61 @@ export class PersonContactModel {
   }
 
   static async create(dados: NovoContato): Promise<PersonContact> {
-    const db = await getDatabase();
-    const id = newId();
-    await db.execute(
-      `INSERT INTO person_contacts (id, person_id, contact_type, contact_value, is_primary, is_verified)
-       VALUES ($1, $2, $3, $4, $5, $6)`,
-      [id, dados.person_id, dados.contact_type, dados.contact_value, dados.is_primary ?? 0, dados.is_verified ?? 0]
-    );
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        const id = newId();
+        await db.execute(
+          `INSERT INTO person_contacts (id, person_id, contact_type, contact_value, is_primary, is_verified)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [id, dados.person_id, dados.contact_type, dados.contact_value, dados.is_primary ?? 0, dados.is_verified ?? 0]
+        );
 
-    const [criado] = await db.select<PersonContact[]>("SELECT * FROM person_contacts WHERE id = $1", [id]);
-    return criado;
+        const [criado] = await db.select<PersonContact[]>("SELECT * FROM person_contacts WHERE id = $1", [id]);
+        return criado;
+      },
+      async (contato) => ({
+        module: "SOCIOS",
+        description: `Contato adicionado — ${await nomeDaPessoa(contato.person_id)}: ${contato.contact_value}`,
+      })
+    );
   }
 
   static async update(id: string, dados: AtualizacaoContato): Promise<void> {
-    const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
-    if (campos.length === 0) return;
+    const [contato] = await (await getDatabase()).select<PersonContact[]>("SELECT * FROM person_contacts WHERE id = $1", [id]);
+    if (!contato) throw new Error("Contato não encontrado.");
 
-    const db = await getDatabase();
-    const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
-    const valores = campos.map(([, valor]) => valor as string | number);
+    return comAtividade(
+      async () => {
+        const campos = Object.entries(dados).filter(([, valor]) => valor !== undefined);
+        if (campos.length === 0) return;
 
-    await db.execute(`UPDATE person_contacts SET ${sets} WHERE id = $1`, [id, ...valores]);
+        const db = await getDatabase();
+        const sets = campos.map(([campo], indice) => `${campo} = $${indice + 2}`).join(", ");
+        const valores = campos.map(([, valor]) => valor as string | number);
+
+        await db.execute(`UPDATE person_contacts SET ${sets} WHERE id = $1`, [id, ...valores]);
+      },
+      async () => ({
+        module: "SOCIOS",
+        description: `Contato alterado — ${await nomeDaPessoa(contato.person_id)}: ${dados.contact_value ?? contato.contact_value}`,
+      })
+    );
   }
 
   static async remove(id: string): Promise<void> {
-    const db = await getDatabase();
-    await db.execute("DELETE FROM person_contacts WHERE id = $1", [id]);
+    const [contato] = await (await getDatabase()).select<PersonContact[]>("SELECT * FROM person_contacts WHERE id = $1", [id]);
+    if (!contato) throw new Error("Contato não encontrado.");
+
+    return comAtividade(
+      async () => {
+        const db = await getDatabase();
+        await db.execute("DELETE FROM person_contacts WHERE id = $1", [id]);
+      },
+      async () => ({
+        module: "SOCIOS",
+        description: `Contato removido — ${await nomeDaPessoa(contato.person_id)}: ${contato.contact_value}`,
+      })
+    );
   }
 }

@@ -6,6 +6,7 @@ import { MemberModel, type SocioExportacao, type StatusSocio } from "../models/M
 import { PersonModel, type GeneroPessoa } from "../models/Person.js";
 import { PersonContactModel } from "../models/PersonContact.js";
 import { AddressModel } from "../models/Address.js";
+import { ActivityLogModel, comAtividade } from "../models/ActivityLog.js";
 import { MembershipPlanModel } from "../models/MembershipPlan.js";
 import { currentAutoRegistrationNumber, currentMembershipMode } from "../composables/useCurrentAssociation.js";
 import { apenasDigitos, formatarCpf, formatarData } from "../utils/format.js";
@@ -489,55 +490,75 @@ export async function importarSocios(
 
   for (const [indice, socio] of socios.entries()) {
     try {
-      const criado = await MemberModel.create({
-        full_name: socio.nome,
-        registration_number: socio.registration_number,
-        association_date: socio.association_date,
-        cpf: socio.cpf,
-        rg: socio.rg,
-        birth_date: socio.birth_date,
-        gender: socio.gender,
-        marital_status: socio.marital_status,
-        nationality: socio.nationality ?? undefined,
-        profession: socio.profession,
-        mother_name: socio.mother_name,
-        father_name: socio.father_name,
-        membership_plan_id: socio.membership_plan_id,
-        dues_start_date: socio.dues_start_date,
-        observations: socio.observations,
-      });
+      // Uma atividade por linha — contatos, endereço e situação gravados
+      // junto não viram linhas próprias no histórico (ver `comAtividade`).
+      await comAtividade(
+        async () => {
+          const criado = await MemberModel.create({
+            full_name: socio.nome,
+            registration_number: socio.registration_number,
+            association_date: socio.association_date,
+            cpf: socio.cpf,
+            rg: socio.rg,
+            birth_date: socio.birth_date,
+            gender: socio.gender,
+            marital_status: socio.marital_status,
+            nationality: socio.nationality ?? undefined,
+            profession: socio.profession,
+            mother_name: socio.mother_name,
+            father_name: socio.father_name,
+            membership_plan_id: socio.membership_plan_id,
+            dues_start_date: socio.dues_start_date,
+            observations: socio.observations,
+          });
 
-      if (socio.phone) {
-        await PersonContactModel.create({
-          person_id: criado.person_id,
-          contact_type: apenasDigitos(socio.phone).length === 11 ? "CELULAR" : "TELEFONE",
-          contact_value: socio.phone,
-          is_primary: 1,
-        });
-      }
-      if (socio.email) {
-        await PersonContactModel.create({
-          person_id: criado.person_id,
-          contact_type: "EMAIL",
-          contact_value: socio.email,
-          is_primary: socio.phone ? 0 : 1,
-        });
-      }
-      if (socio.endereco) {
-        await AddressModel.create({ person_id: criado.person_id, ...socio.endereco, is_primary: 1 });
-      }
-      if (socio.status !== criado.status) {
-        await MemberModel.changeStatus(criado.id, socio.status, {
-          effectiveDate: socio.association_date,
-          reason: "Importado de planilha CSV",
-        });
-      }
+          if (socio.phone) {
+            await PersonContactModel.create({
+              person_id: criado.person_id,
+              contact_type: apenasDigitos(socio.phone).length === 11 ? "CELULAR" : "TELEFONE",
+              contact_value: socio.phone,
+              is_primary: 1,
+            });
+          }
+          if (socio.email) {
+            await PersonContactModel.create({
+              person_id: criado.person_id,
+              contact_type: "EMAIL",
+              contact_value: socio.email,
+              is_primary: socio.phone ? 0 : 1,
+            });
+          }
+          if (socio.endereco) {
+            await AddressModel.create({ person_id: criado.person_id, ...socio.endereco, is_primary: 1 });
+          }
+          if (socio.status !== criado.status) {
+            await MemberModel.changeStatus(criado.id, socio.status, {
+              effectiveDate: socio.association_date,
+              reason: "Importado de planilha CSV",
+            });
+          }
+          return criado;
+        },
+        (criado) => ({
+          module: "SOCIOS",
+          description: `Novo sócio importado de planilha — ${socio.nome} (matrícula ${criado.registration_number})`,
+          entity_type: "MEMBER",
+          entity_id: criado.id,
+        })
+      );
       importados++;
     } catch (error) {
       erros.push({ linha: socio.linha, mensagem: `${socio.nome}: ${error instanceof Error ? error.message : error}` });
     }
     aoProgredir?.(indice + 1);
   }
+
+  await ActivityLogModel.registrar({
+    module: "SOCIOS",
+    description: `Importação de sócios por planilha — ${importados} importado(s)${
+      erros.length ? `, ${erros.length} com erro` : ""
+    }`,
+  });
 
   return { importados, erros };
 }
