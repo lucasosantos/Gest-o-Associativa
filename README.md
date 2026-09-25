@@ -12,6 +12,7 @@ banco de dados e, opcionalmente, sua própria senha de acesso.
 
 ## Sumário
 
+- [Novidades da versão 1.2](#novidades-da-versão-12)
 - [Novidades da versão 1.1](#novidades-da-versão-11)
 - [Instalação](#instalação)
 - [Funcionalidades](#funcionalidades)
@@ -19,6 +20,25 @@ banco de dados e, opcionalmente, sua própria senha de acesso.
 - [Impressão](#impressão)
 - [Onde ficam os dados e backup](#onde-ficam-os-dados-e-backup)
 - [Desenvolvimento](#desenvolvimento)
+
+## Novidades da versão 1.2
+
+- **Relatório financeiro do sócio** — botão "Gerar relatório financeiro"
+  na ficha do sócio: resumo das mensalidades (pagas, via acordo, vencidas,
+  em aberto e valor estimado em atraso) num período à escolha — por padrão,
+  da data de associação até hoje. Abre numa tela de consulta; imprimir é
+  opcional.
+- **Ficha do sócio impressa** — botão "Imprimir ficha": todos os dados
+  cadastrais e a foto, resumidos em uma folha A4.
+- **Aba Dados completa** — a ficha do sócio mostra todos os campos do
+  cadastro, inclusive os que estão em branco.
+- **Ordenação pela tabela** — na lista de sócios, clicar no título de uma
+  coluna ordena por ela (crescente); clicar de novo inverte (decrescente).
+- **Importação de CSV mais tolerante** — coluna que não existe na planilha
+  simplesmente fica em branco (as demais são importadas) e célula vazia é
+  ignorada, sem erro; só nome e data de associação são obrigatórios (e a
+  matrícula, quando a numeração não é automática). Limite do arquivo
+  aumentado para 50 MB.
 
 ## Novidades da versão 1.1
 
@@ -76,7 +96,11 @@ sudo apt install ./gestao-associativa_x.x.x_amd64.deb
 - **Sócios** — cadastro de sócios (dados pessoais, foto, endereço,
   contatos, dependentes, representantes), situação com histórico
   (ativo/inativo/suspenso/desligado/etc.), matrícula manual ou automática,
-  importação e exportação em planilha CSV. Impressões: lista de sócios
+  importação e exportação em planilha CSV (colunas ausentes ou células
+  vazias são ignoradas), tabela ordenável clicando no título das colunas.
+  Na ficha, a aba Dados mostra todos os campos do cadastro e há o
+  **relatório financeiro do sócio** (mensalidades num período escolhido,
+  com impressão opcional). Impressões: ficha do sócio (uma folha A4), lista de sócios
   (filtrada por situação, ordenada por nome ou matrícula, cada sócio em
   duas linhas com matrícula, nome, data de associação, CPF, RG e
   nascimento), lista de aptos a votar e declarações.
@@ -137,16 +161,17 @@ sudo apt install ./gestao-associativa_x.x.x_amd64.deb
 
 ## Impressão
 
-Todas as impressões (relatórios, listas, recibos, declarações) abrem numa
+As impressões (listas, recibos, declarações, ficha do sócio) abrem numa
 tela própria que já chama a janela de impressão do sistema — dali também
-dá para salvar em PDF.
+dá para salvar em PDF. O relatório financeiro do sócio é uma tela de
+consulta: só vai para a impressora se você clicar em "Imprimir".
 
 Em **Configurações → Impressão** ficam dois tamanhos de papel, guardados
 por instalação (valem para todas as associações daquele computador):
 
 | Opção | Papéis | Usado em |
 |---|---|---|
-| Impressão padrão | A4, Carta, Ofício | relatórios, listas de sócios, livro de protocolo, extrato, prestação de contas, declarações, balanço de patrimônio, atividades |
+| Impressão padrão | A4, Carta, Ofício | relatórios, listas de sócios, ficha e relatório financeiro do sócio, livro de protocolo, extrato, prestação de contas, declarações, balanço de patrimônio, atividades |
 | Impressão de recibo | A4, A5 (meia folha), Carta, bobina térmica 58 mm, bobina térmica 80 mm | recibo de mensalidade, recibo de acordo, comprovante de protocolo |
 
 Dicas:
@@ -202,8 +227,8 @@ automatizados nem ESLint/Prettier configurados.
 1. Atualize a versão (mesmo número nos três lugares): `package.json`,
    `src-tauri/tauri.conf.json` e `src-tauri/Cargo.toml` (o `Cargo.lock` e o
    `package-lock.json` acompanham).
-2. Faça o commit e envie uma tag `v<versão>` (ex.: `git tag v1.1.0 && git
-   push origin v1.1.0`) — o workflow
+2. Faça o commit e envie uma tag `v<versão>` (ex.: `git tag v1.2.0 && git
+   push origin v1.2.0`) — o workflow
    [release.yml](.github/workflows/release.yml) gera os instaladores de
    Windows e Linux e publica em Releases.
 
