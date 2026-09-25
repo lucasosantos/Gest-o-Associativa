@@ -40,16 +40,18 @@ type ChaveColuna =
 
 export interface ColunaCsv {
   chave: ChaveColuna;
-  /** Obrigatória em toda linha (a matrícula tem regra própria — ver `descricao`). */
+  /** Essencial: sem a coluna (ou com a célula em branco) o sócio não é importado. A matrícula tem regra própria — ver `descricao`. */
   obrigatoria: boolean;
   descricao: string;
   exemplo: string;
 }
 
 /**
- * Ordem OFICIAL das colunas — a importação lê por posição e confere o
- * cabeçalho contra esta lista. Não reordene: arquivos já exportados
- * deixariam de ser importáveis. Coluna nova só entra no FIM.
+ * Colunas conhecidas, na ordem usada pela exportação e pelo modelo. A
+ * importação lê cada coluna PELO NOME do cabeçalho (ver `mapearCabecalho`),
+ * não pela posição: a planilha pode ter as colunas em qualquer ordem, só
+ * algumas delas, ou colunas extras (ignoradas). Coluna ausente = campo não
+ * preenchido.
  */
 export const COLUNAS_CSV: readonly ColunaCsv[] = [
   { chave: "matricula", obrigatoria: false, descricao: "Obrigatória se a numeração automática estiver desligada; com ela ligada, é ignorada e o sistema gera o número.", exemplo: "0001" },
@@ -67,7 +69,7 @@ export const COLUNAS_CSV: readonly ColunaCsv[] = [
   { chave: "nome_pai", obrigatoria: false, descricao: "Filiação 2.", exemplo: "José da Silva" },
   { chave: "telefone", obrigatoria: false, descricao: "Com DDD. 11 dígitos vira celular.", exemplo: "(11) 98765-4321" },
   { chave: "email", obrigatoria: false, descricao: "Endereço de e-mail.", exemplo: "maria@exemplo.com" },
-  { chave: "cep", obrigatoria: false, descricao: "Endereço (opcional). Se preencher qualquer campo do endereço, logradouro, cidade e UF viram obrigatórios.", exemplo: "01001-000" },
+  { chave: "cep", obrigatoria: false, descricao: "Endereço (opcional). Só é importado se tiver logradouro, cidade e UF; faltando algum, o sócio entra sem endereço.", exemplo: "01001-000" },
   { chave: "logradouro", obrigatoria: false, descricao: "Rua, avenida, sítio...", exemplo: "Rua das Flores" },
   { chave: "numero", obrigatoria: false, descricao: "Número do endereço.", exemplo: "120" },
   { chave: "complemento", obrigatoria: false, descricao: "Complemento.", exemplo: "Casa 2" },
@@ -269,6 +271,61 @@ function cpfValido(cpf: string): boolean {
   return true;
 }
 
+/**
+ * Outros nomes de cabeçalho aceitos (já normalizados — ver `normalizar`),
+ * pra planilhas montadas à mão sem seguir o modelo à risca.
+ */
+const APELIDOS_COLUNA: Record<string, ChaveColuna> = {
+  n_matricula: "matricula",
+  numero_matricula: "matricula",
+  numero_de_matricula: "matricula",
+  nome: "nome_completo",
+  nome_do_socio: "nome_completo",
+  socio: "nome_completo",
+  data_de_associacao: "data_associacao",
+  associado_em: "data_associacao",
+  data_de_entrada: "data_associacao",
+  status: "situacao",
+  data_de_nascimento: "data_nascimento",
+  nascimento: "data_nascimento",
+  sexo: "genero",
+  profissao_ocupacao: "profissao",
+  mae: "nome_mae",
+  nome_da_mae: "nome_mae",
+  pai: "nome_pai",
+  nome_do_pai: "nome_pai",
+  celular: "telefone",
+  fone: "telefone",
+  "e-mail": "email",
+  endereco: "logradouro",
+  rua: "logradouro",
+  complemento_endereco: "complemento",
+  municipio: "cidade",
+  estado: "uf",
+  observacao: "observacoes",
+  obs: "observacoes",
+};
+
+/**
+ * Posição de cada coluna conhecida no arquivo, pelo nome do cabeçalho
+ * (nome oficial de `COLUNAS_CSV` ou um apelido). Cabeçalho que não bate
+ * com nada vai pra `ignoradas`; se a mesma coluna aparecer duas vezes, vale
+ * a primeira.
+ */
+function mapearCabecalho(cabecalho: string[]): { posicoes: Map<ChaveColuna, number>; ignoradas: string[] } {
+  const conhecidas = new Set<string>(COLUNAS_CSV.map((coluna) => coluna.chave));
+  const posicoes = new Map<ChaveColuna, number>();
+  const ignoradas: string[] = [];
+  cabecalho.forEach((titulo, indice) => {
+    const nome = normalizar(titulo);
+    if (!nome) return;
+    const chave = conhecidas.has(nome) ? (nome as ChaveColuna) : APELIDOS_COLUNA[nome];
+    if (chave && !posicoes.has(chave)) posicoes.set(chave, indice);
+    else ignoradas.push(titulo.trim());
+  });
+  return { posicoes, ignoradas };
+}
+
 /** Linha já validada e convertida, pronta pra `importarSocios`. */
 export interface SocioImportacao {
   /** Número da linha no arquivo (1 = cabeçalho), pra mensagens de erro. */
@@ -310,52 +367,71 @@ export interface ErroLinha {
 export interface AnaliseCsv {
   validas: SocioImportacao[];
   erros: ErroLinha[];
+  /** Linhas que serão importadas, mas com algum dado deixado de fora (ex.: endereço incompleto). */
+  avisos: ErroLinha[];
+  /** Colunas conhecidas que não existem no arquivo — ficam em branco em todos os sócios. */
+  colunasAusentes: ChaveColuna[];
+  /** Cabeçalhos do arquivo que não correspondem a nenhuma coluna conhecida. */
+  colunasIgnoradas: string[];
 }
 
 /**
- * Lê o texto do CSV, confere o cabeçalho contra `COLUNAS_CSV` e valida
- * linha a linha — inclusive matrícula/CPF repetidos no próprio arquivo ou
- * já cadastrados. Não grava nada: a tela mostra o resultado e só então
- * chama `importarSocios` com as linhas válidas.
+ * Lê o texto do CSV, identifica as colunas pelo cabeçalho e valida linha a
+ * linha — inclusive matrícula/CPF repetidos no próprio arquivo ou já
+ * cadastrados. Coluna ausente ou célula em branco não é erro: o campo só
+ * não é preenchido. Erro de verdade só quando falta o que o cadastro não
+ * dispensa (nome, data de associação e, com a numeração automática
+ * desligada, matrícula) ou quando um valor preenchido é inválido. Não grava
+ * nada: a tela mostra o resultado e só então chama `importarSocios` com as
+ * linhas válidas.
  */
 export async function analisarCsv(texto: string): Promise<AnaliseCsv> {
-  const linhas = lerCsv(texto.replace(/^﻿/, ""));
-  if (linhas.length === 0) return { validas: [], erros: [{ linha: 1, mensagem: "O arquivo está vazio." }] };
+  const linhas = lerCsv(texto.replace(/^\uFEFF/, ""));
+  const vazia = { validas: [], avisos: [], colunasAusentes: [], colunasIgnoradas: [] };
+  if (linhas.length === 0) return { ...vazia, erros: [{ linha: 1, mensagem: "O arquivo está vazio." }] };
 
-  const cabecalho = linhas[0].map(normalizar);
-  for (let i = 0; i < Math.min(cabecalho.length, COLUNAS_CSV.length); i++) {
-    if (cabecalho[i] !== COLUNAS_CSV[i].chave && cabecalho[i] !== "") {
-      return {
-        validas: [],
-        erros: [
-          {
-            linha: 1,
-            mensagem: `Cabeçalho fora do modelo: a coluna ${i + 1} devia ser "${COLUNAS_CSV[i].chave}", mas é "${linhas[0][i]}". Baixe o modelo e mantenha a ordem das colunas.`,
-          },
-        ],
-      };
-    }
-  }
-  if (cabecalho.length < 3) {
-    return { validas: [], erros: [{ linha: 1, mensagem: "O arquivo precisa ter pelo menos as colunas matricula, nome_completo e data_associacao." }] };
-  }
-
+  const { posicoes, ignoradas } = mapearCabecalho(linhas[0]);
   const matriculaAutomatica = currentAutoRegistrationNumber.value;
+
+  const essenciais: ChaveColuna[] = ["nome_completo", "data_associacao"];
+  if (!matriculaAutomatica) essenciais.unshift("matricula");
+  const faltandoEssenciais = essenciais.filter((chave) => !posicoes.has(chave));
+  if (faltandoEssenciais.length > 0) {
+    const dicaMatricula = faltandoEssenciais.includes("matricula")
+      ? " (ou ligue a numeração automática de matrícula em Instituição)"
+      : "";
+    return {
+      ...vazia,
+      colunasIgnoradas: ignoradas,
+      erros: [
+        {
+          linha: 1,
+          mensagem: `O cabeçalho (1ª linha) precisa ter a(s) coluna(s) ${faltandoEssenciais.join(", ")}${dicaMatricula} — sem elas não dá pra cadastrar nenhum sócio.`,
+        },
+      ],
+    };
+  }
+  const colunasAusentes = COLUNAS_CSV.map((coluna) => coluna.chave).filter(
+    (chave) => !posicoes.has(chave) && !(chave === "matricula" && matriculaAutomatica)
+  );
+
   const modoMultiplo = currentMembershipMode.value === "MULTIPLO";
   const planos = modoMultiplo ? await MembershipPlanModel.list() : [];
   const planoPorNome = new Map(planos.map((plano) => [normalizar(plano.name), plano.id]));
 
   const validas: SocioImportacao[] = [];
   const erros: ErroLinha[] = [];
+  const avisos: ErroLinha[] = [];
   const matriculasNoArquivo = new Set<string>();
   const cpfsNoArquivo = new Set<string>();
 
   for (let indice = 1; indice < linhas.length; indice++) {
     const numeroLinha = indice + 1;
     const bruto = linhas[indice];
+    // Coluna ausente no arquivo ou célula em branco = "" (campo não preenchido).
     const campo = (chave: ChaveColuna): string => {
-      const posicao = COLUNAS_CSV.findIndex((coluna) => coluna.chave === chave);
-      return (bruto[posicao] ?? "").trim();
+      const posicao = posicoes.get(chave);
+      return posicao === undefined ? "" : (bruto[posicao] ?? "").trim();
     };
     const opcional = (chave: ChaveColuna): string | null => campo(chave) || null;
     const problemas: string[] = [];
@@ -412,11 +488,14 @@ export async function analisarCsv(texto: string): Promise<AnaliseCsv> {
     const email = opcional("email");
     if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) problemas.push(`email inválido ("${email}")`);
 
+    // Endereço só é gravado com logradouro, cidade e UF (o cadastro exige os
+    // três); faltando algum, o sócio entra sem endereço — aviso, não erro.
     let endereco: SocioImportacao["endereco"] = null;
+    const avisosLinha: string[] = [];
     const camposEndereco: ChaveColuna[] = ["cep", "logradouro", "numero", "complemento", "bairro", "cidade", "uf"];
     if (camposEndereco.some((chave) => campo(chave))) {
       const faltando = (["logradouro", "cidade", "uf"] as ChaveColuna[]).filter((chave) => !campo(chave));
-      if (faltando.length > 0) problemas.push(`endereço incompleto: falta ${faltando.join(", ")}`);
+      if (faltando.length > 0) avisosLinha.push(`endereço não importado (falta ${faltando.join(", ")})`);
       else
         endereco = {
           zip_code: opcional("cep"),
@@ -447,6 +526,10 @@ export async function analisarCsv(texto: string): Promise<AnaliseCsv> {
       continue;
     }
 
+    if (avisosLinha.length > 0) {
+      avisos.push({ linha: numeroLinha, mensagem: `${nome}: ${avisosLinha.join("; ")}` });
+    }
+
     validas.push({
       linha: numeroLinha,
       nome,
@@ -471,7 +554,7 @@ export async function analisarCsv(texto: string): Promise<AnaliseCsv> {
     });
   }
 
-  return { validas, erros };
+  return { validas, erros, avisos, colunasAusentes, colunasIgnoradas: ignoradas };
 }
 
 /**

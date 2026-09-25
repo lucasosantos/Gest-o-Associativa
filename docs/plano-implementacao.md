@@ -1389,6 +1389,26 @@ e nascimento, cada campo com rótulo. Dados via
 centralizados em [situacaoSocio.ts](../src/utils/situacaoSocio.ts).
 Validado em PDF A4 (Chrome headless, CSS real): ~11 sócios por folha.
 
+## Mudança pós-MVP — importação de CSV tolerante a colunas ausentes ✅ concluída (2026-09-25)
+
+[memberCsv.ts](../src/services/memberCsv.ts): as colunas passam a ser
+lidas **pelo nome do cabeçalho** (`mapearCabecalho`, com apelidos como
+`nome`, `nascimento`, `celular`, `e-mail`, `estado`), não pela posição —
+qualquer ordem, qualquer subconjunto; cabeçalho desconhecido é ignorado
+(e listado na tela). Coluna ausente ou célula em branco = campo não
+preenchido, sem erro. Continua sendo erro: faltar nome, data de associação
+ou (com numeração automática desligada) matrícula — coluna ausente vira um
+erro único no cabeçalho, célula em branco erra só aquela linha —, valor
+preenchido inválido (CPF, data, gênero, e-mail, situação, plano) e
+matrícula/CPF duplicados. Endereço incompleto (sem logradouro, cidade ou
+UF) deixou de ser erro: o sócio entra sem endereço, com aviso. A tela de
+importação mostra colunas ausentes, ignoradas e os avisos antes de
+confirmar. Limite de leitura de arquivo de texto subiu de 20 para 50 MB
+(`files.rs`). Validado compilando o `memberCsv.ts` real com esbuild e
+stubs de banco, em quatro cenários (colunas fora de ordem + extra,
+células em branco + endereço incompleto, coluna essencial ausente, célula
+essencial em branco).
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:

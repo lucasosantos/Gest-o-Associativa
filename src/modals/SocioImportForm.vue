@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Importação de sócios a partir de um CSV (Excel / Google Planilhas): mostra
-// a regra de formatação do arquivo (ordem das colunas), analisa o arquivo
+// as colunas reconhecidas (lidas pelo nome do cabeçalho, em qualquer ordem;
+// coluna ausente ou célula em branco só deixa o campo vazio), analisa o arquivo
 // escolhido sem gravar nada e só importa depois da confirmação — ver
 // `src/services/memberCsv.ts`.
 import { ref } from "vue";
@@ -95,9 +96,10 @@ function voltar() {
 
     <template v-if="etapa === 'instrucoes'">
       <p class="texto">
-        Monte uma planilha no Excel ou no Google Planilhas com as colunas <strong>nesta ordem</strong>, a
-        primeira linha sendo o cabeçalho (exatamente os nomes abaixo), e um sócio por linha. O jeito mais fácil
-        é baixar o modelo ou usar um arquivo exportado por esta tela.
+        Monte uma planilha no Excel ou no Google Planilhas com a primeira linha sendo o cabeçalho (os nomes de
+        coluna abaixo) e um sócio por linha. As colunas podem estar <strong>em qualquer ordem</strong> e não
+        precisam estar todas: coluna que não existir no arquivo, ou célula em branco, simplesmente não é
+        preenchida. O jeito mais fácil é baixar o modelo ou usar um arquivo exportado por esta tela.
       </p>
 
       <button type="button" class="btn-secondary" :disabled="trabalhando" @click="baixarModelo">
@@ -124,7 +126,7 @@ function voltar() {
         </tbody>
       </table>
       <p class="dica">
-        * obrigatória.
+        * essencial — sem ela (coluna ausente ou célula em branco) o sócio não é importado.
         <template v-if="currentAutoRegistrationNumber">
           A numeração automática de matrícula está <strong>ligada</strong>: a coluna <code>matricula</code> será
           ignorada.
@@ -139,8 +141,11 @@ function voltar() {
           Formate as colunas <code>matricula</code>, <code>cpf</code>, <code>telefone</code> e <code>cep</code> como
           <em>Texto</em> antes de digitar — senão a planilha apaga os zeros à esquerda.
         </li>
-        <li>Datas no formato <code>DD/MM/AAAA</code>. Colunas opcionais podem ficar em branco.</li>
-        <li>Linhas com erro não são importadas; você vê a lista antes de confirmar.</li>
+        <li>Datas no formato <code>DD/MM/AAAA</code>. Colunas opcionais podem ficar em branco ou nem existir.</li>
+        <li>
+          Linhas com erro (falta nome/data de associação, ou valor preenchido inválido, como CPF ou data errados)
+          não são importadas; você vê a lista antes de confirmar.
+        </li>
       </ul>
 
       <div class="save-row">
@@ -155,6 +160,20 @@ function voltar() {
     <template v-else-if="etapa === 'analise' && analise">
       <p class="texto">Arquivo: <strong>{{ nomeArquivo }}</strong></p>
       <p class="resumo ok">{{ analise.validas.length }} sócio(s) prontos para importar.</p>
+      <p v-if="analise.colunasAusentes.length > 0" class="texto">
+        Colunas que não existem no arquivo (ficam em branco):
+        <code v-for="chave in analise.colunasAusentes" :key="chave" class="coluna-tag">{{ chave }}</code>
+      </p>
+      <p v-if="analise.colunasIgnoradas.length > 0" class="texto">
+        Colunas do arquivo não reconhecidas (ignoradas):
+        <code v-for="titulo in analise.colunasIgnoradas" :key="titulo" class="coluna-tag">{{ titulo }}</code>
+      </p>
+      <template v-if="analise.avisos.length > 0">
+        <p class="resumo">{{ analise.avisos.length }} sócio(s) serão importados sem algum dado:</p>
+        <ul class="lista-erros">
+          <li v-for="item in analise.avisos" :key="item.linha">Linha {{ item.linha }} — {{ item.mensagem }}</li>
+        </ul>
+      </template>
       <template v-if="analise.erros.length > 0">
         <p class="resumo falha">{{ analise.erros.length }} linha(s) com problema — não serão importadas:</p>
         <ul class="lista-erros">
@@ -280,6 +299,11 @@ h4 {
 
 .resumo.falha {
   color: #c0392b;
+}
+
+.coluna-tag {
+  display: inline-block;
+  margin: 0.15rem 0.3rem 0 0;
 }
 
 .lista-erros {
