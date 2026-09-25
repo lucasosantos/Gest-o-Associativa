@@ -1333,6 +1333,62 @@ anterior à aquisição, `UNIQUE` do nº de patrimônio, FK impedindo apagar
 lançamento ligado a evento, cascade dos eventos ao excluir o bem, triggers
 bloqueando alteração/exclusão do histórico, filtro por data local).
 
+## Mudança pós-MVP — papel de impressão configurável e revisão das impressões ✅ concluída (2026-09-24)
+
+**Configuração:** `AppConfig.print` (`PrintConfig { default_paper, receipt_paper }`)
+em [config.rs](../src-tauri/src/config.rs), com `#[serde(default)]` — um
+`config.json` antigo continua sendo lido como formato atual (A4 nos dois).
+É preferência da instalação (impressora/papel da máquina), não da
+associação, por isso fica no `config.json` e não no banco. Comandos
+`get_print_config`/`set_print_config` (validam os códigos). Papel padrão:
+A4, Carta, Ofício — relatórios, listas, livro de protocolo, extrato,
+prestação de contas, declaração, balanço de patrimônio, aptos a votar e
+atividades. Papel de recibo: A4, A5, Carta e bobina de impressora térmica 58 mm
+/ 80 mm (`TERMICA_58`/`TERMICA_80`) — recibo de mensalidade, recibo de
+acordo e comprovante de protocolo. Bobina: como `@page` não tem papel de
+altura contínua, o recibo (`.documento-recibo`) é desenhado na largura da
+bobina já na tela (área útil 48/72 mm, letra 8/9,5 pt, rótulos acima dos
+valores — CSS global em `App.vue`) e `imprimir()` mede a altura dele pra
+criar uma página do tamanho exato (sem puxar papel em branco). Validado em
+PDF: 58 × 106 mm e 80 × 116 mm, uma página cada, nada fora da largura. Tela: seção "Impressão" em
+[Configuracoes.vue](../src/views/Configuracoes.vue).
+
+**Aplicação:** [usePaginaImpressao.ts](../src/composables/usePaginaImpressao.ts)
+injeta `@page { size; margin }` no `<head>` enquanto a tela de impressão
+está montada (`@page` não funciona em `<style scoped>`) e devolve
+`imprimir()`, que espera o papel estar aplicado antes do `window.print()`.
+
+**Por que vazava do A4:** `.app-shell` tem `width: 100vw` e o CSS de
+impressão só desfazia a altura — no papel, a página tinha a largura da
+JANELA (ex.: 1600px). Corrigido no `@media print` global do `App.vue`,
+que também: força as cores do tema claro no papel (no modo escuro o texto
+saía claro), quebra texto livre sem espaço dentro da célula
+(`overflow-wrap: anywhere`) com colunas curtas protegidas por
+`.nao-quebrar`, repete o cabeçalho de tabela em cada folha e não parte
+linha entre páginas. Declaração perde a moldura de tela no papel (ocupa a
+página); recibos/comprovante mantêm a moldura, sem largura fixa e sem
+dividir em duas folhas (cabe em A5).
+
+Validado: `npx vue-tsc -b --force`, `cargo check`, e PDFs gerados com o
+Chrome headless numa janela de 1600px reproduzindo a casca do app: antes,
+o navegador encolhia a página inteira pra caber (em Carta); depois, A4 com
+tabela de livro de protocolo dentro da margem (inclusive com nome de
+arquivo sem espaços) e recibo inteiro numa folha A5.
+
+## Mudança pós-MVP — lista de sócios impressa ✅ concluída (2026-09-25)
+
+Botão "Imprimir lista" na sidebar de [Socios.vue](../src/views/Socios.vue)
+→ modal [ListaSociosPrintForm.vue](../src/modals/ListaSociosPrintForm.vue)
+(situação — padrão "Ativo", ou todas — e ordem por nome/matrícula) →
+[ImprimirListaSocios.vue](../src/views/ImprimirListaSocios.vue)
+(`/socios/lista/imprimir?situacao=&ordem=`, filtros também trocáveis na
+barra de ações). Cada sócio ocupa duas linhas (um `<tbody>` por sócio, que
+não se parte entre folhas): matrícula e nome; data de associação, CPF, RG
+e nascimento, cada campo com rótulo. Dados via
+`MemberModel.listarParaImpressao` (sem a foto). Rótulos de situação
+centralizados em [situacaoSocio.ts](../src/utils/situacaoSocio.ts).
+Validado em PDF A4 (Chrome headless, CSS real): ~11 sócios por folha.
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:

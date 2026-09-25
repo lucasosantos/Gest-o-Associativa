@@ -63,3 +63,24 @@ export function removeAssociation(id: string): Promise<void> {
 export function restartApp(): Promise<void> {
   return invoke<void>("restart_app");
 }
+
+/** Tamanho de papel das impressões — espelha `PrintConfig` de `src-tauri/src/config.rs`. */
+export type PapelPadrao = "A4" | "CARTA" | "OFICIO";
+/** `TERMICA_*`: bobina de impressora térmica (largura em mm, altura acompanha o recibo). */
+export type PapelRecibo = "A4" | "A5" | "CARTA" | "TERMICA_58" | "TERMICA_80";
+
+export interface PrintConfig {
+  /** Relatórios, listas, livros, extratos e declarações. */
+  default_paper: PapelPadrao;
+  /** Recibos de mensalidade/acordo e comprovante de protocolo. */
+  receipt_paper: PapelRecibo;
+}
+
+/** Papel configurado nesta instalação (`config.json`) — padrão A4 nos dois. */
+export function getPrintConfig(): Promise<PrintConfig> {
+  return invoke<PrintConfig>("get_print_config");
+}
+
+export function setPrintConfig(print: PrintConfig): Promise<void> {
+  return invoke<void>("set_print_config", { print });
+}

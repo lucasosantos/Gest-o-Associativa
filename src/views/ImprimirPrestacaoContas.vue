@@ -12,6 +12,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarMoeda } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -40,9 +41,8 @@ const totalSaidas = computed(() =>
 );
 const saldoPeriodo = computed(() => totalEntradas.value - totalSaidas.value);
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 onMounted(async () => {
   if (!dataInicio || !dataFim) {
@@ -104,12 +104,12 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-for="lancamento in lancamentos" :key="lancamento.id">
-            <td>{{ formatarData(lancamento.transaction_date) }}</td>
+            <td class="nao-quebrar">{{ formatarData(lancamento.transaction_date) }}</td>
             <td>{{ lancamento.account_name }}</td>
             <td>{{ lancamento.category_name || "—" }}</td>
-            <td>{{ TIPO_LABEL[lancamento.transaction_type] }}</td>
+            <td class="nao-quebrar">{{ TIPO_LABEL[lancamento.transaction_type] }}</td>
             <td>{{ lancamento.description }}</td>
-            <td :class="{ negativo: lancamento.signed_amount < 0 }">
+            <td class="nao-quebrar" :class="{ negativo: lancamento.signed_amount < 0 }">
               {{ formatarMoeda(lancamento.signed_amount) }}
             </td>
           </tr>

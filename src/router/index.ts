@@ -50,6 +50,14 @@ export const routes: RouteRecordRaw[] = [
     meta: { hidden: true },
   },
   {
+    path: "/socios/lista/imprimir",
+    name: "lista-socios-imprimir",
+    component: () => import("../views/ImprimirListaSocios.vue"),
+    // Sem meta.label: só alcançável pelo botão "Imprimir lista" da sidebar de
+    // Sócios (filtro de situação/ordem via query `?situacao=&ordem=`).
+    meta: { hidden: true },
+  },
+  {
     path: "/socios/aptos-a-votar/imprimir",
     name: "aptos-a-votar-imprimir",
     component: () => import("../views/ImprimirAptosAVotar.vue"),

@@ -14,6 +14,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarMoeda, formatarCompetencia } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -28,9 +29,8 @@ const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0
 const mesesTexto = computed(() => acordo.value?.competence_months.map(formatarCompetencia).join(", ") ?? "");
 const desconto = computed(() => (acordo.value ? acordo.value.original_amount - acordo.value.negotiated_amount : 0));
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel de recibo de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("RECIBO");
 
 onMounted(async () => {
   try {
@@ -62,7 +62,7 @@ onMounted(async () => {
         <button type="button" class="btn-primary" @click="imprimir">Imprimir</button>
       </div>
 
-      <div class="recibo">
+      <div class="recibo documento-recibo">
         <header class="cabecalho">
           <PrintHeader :association="associacao" :address="endereco" />
           <h1>Recibo de Acordo{{ acordo.receipt_number ? ` Nº ${acordo.receipt_number}` : "" }}</h1>
@@ -213,6 +213,20 @@ onMounted(async () => {
 @media print {
   .no-print {
     display: none !important;
+  }
+
+  /* Papel de recibo (Configurações → Impressão): a caixa acompanha a
+     largura útil da página — cabe em A5 — e não se divide em duas folhas. */
+  .recibo {
+    max-width: 100%;
+    padding: 1.25rem 1.5rem;
+    border-radius: 0;
+    break-inside: avoid;
+  }
+
+  .detalhes {
+    grid-template-columns: max-content 1fr;
+    column-gap: 1rem;
   }
 
   .recibo {

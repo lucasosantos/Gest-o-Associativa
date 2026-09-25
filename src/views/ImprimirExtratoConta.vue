@@ -12,6 +12,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarMoeda } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -36,9 +37,8 @@ const TIPO_LABEL: Record<string, string> = {
 
 const somaMovimentos = computed(() => extrato.value?.movimentos.reduce((total, m) => total + m.signed_amount, 0) ?? 0);
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 onMounted(async () => {
   if (!dataInicio || !dataFim) {
@@ -108,11 +108,11 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-for="movimento in extrato.movimentos" :key="movimento.id">
-            <td>{{ formatarData(movimento.transaction_date) }}</td>
+            <td class="nao-quebrar">{{ formatarData(movimento.transaction_date) }}</td>
             <td>{{ movimento.category_name || "—" }}</td>
-            <td>{{ TIPO_LABEL[movimento.transaction_type] }}</td>
+            <td class="nao-quebrar">{{ TIPO_LABEL[movimento.transaction_type] }}</td>
             <td>{{ movimento.description }}</td>
-            <td :class="{ negativo: movimento.signed_amount < 0 }">{{ formatarMoeda(movimento.signed_amount) }}</td>
+            <td class="nao-quebrar" :class="{ negativo: movimento.signed_amount < 0 }">{{ formatarMoeda(movimento.signed_amount) }}</td>
           </tr>
         </tbody>
       </table>

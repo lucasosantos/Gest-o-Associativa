@@ -201,11 +201,137 @@ body {
   font-size: 14px;
 }
 
-/* Telas de impressão (ex.: ImprimirLivroProtocolo.vue) marcam o que não
-   deve sair no papel com `.no-print` — aqui só cuidamos de tirar a casca
-   do app (menu/sidebar) e destravar a altura/scroll fixos do layout de
-   tela, que senão cortariam a lista impressa numa página só. */
+/* Recibo em bobina de impressora térmica (Configurações → Impressão →
+   58/80 mm; `usePaginaImpressao.ts` marca `<html data-papel="TERMICA_*">` e
+   define as variáveis `--bobina-*`). Fica FORA do `@media print` de
+   propósito: a pré-visualização na tela já sai na largura da bobina, e é a
+   altura medida dela que vira o tamanho da página na impressão. Vale pra
+   qualquer caixa marcada com `.documento-recibo` (recibo de mensalidade, de
+   acordo e comprovante de protocolo) — o seletor com `:root[...]` vence os
+   estilos scoped de cada tela. */
+:root[data-papel^="TERMICA"] .documento-recibo {
+  width: var(--bobina-largura);
+  max-width: none;
+  margin: 0 auto;
+  padding: 3mm var(--bobina-margem);
+  border: none;
+  border-radius: 0;
+  background: #fff;
+  font-size: var(--bobina-fonte);
+  line-height: 1.35;
+  break-inside: auto;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo * {
+  color: #000 !important;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .cabecalho {
+  margin: 0 0 2mm;
+  padding: 0 0 2mm;
+  border-bottom: 1px dashed #000;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .print-header p {
+  margin: 0;
+  font-size: 0.9em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .print-header .nome {
+  font-size: 1em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo h1 {
+  margin: 1.5mm 0 0;
+  font-size: 1.15em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .subtitulo {
+  margin: 0.5mm 0 0;
+  font-size: 0.9em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .valor {
+  margin: 1mm 0 2mm;
+  font-size: 1.7em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .corpo {
+  margin: 0 0 2mm;
+  font-size: 1em;
+  line-height: 1.35;
+  text-align: left;
+}
+
+/* Rótulo em cima, valor embaixo — em 48 mm não cabem duas colunas. */
+:root[data-papel^="TERMICA"] .documento-recibo .detalhes {
+  display: block;
+  margin: 0 0 2mm;
+  font-size: 0.95em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .detalhes dt {
+  margin-top: 1mm;
+  font-weight: 600;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .detalhes dd {
+  margin: 0;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .local-data {
+  margin: 0 0 7mm;
+  font-size: 0.85em;
+  text-align: left;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .assinatura p {
+  font-size: 0.85em;
+}
+
+:root[data-papel^="TERMICA"] .documento-recibo .linha-assinatura {
+  width: 85%;
+  border-top-color: #000;
+}
+
 @media print {
+  :root[data-papel^="TERMICA"] .documento-recibo {
+    margin: 0;
+  }
+}
+
+/* Telas de impressão (ex.: ImprimirLivroProtocolo.vue) marcam o que não
+   deve sair no papel com `.no-print`. Aqui fica o que vale pra TODA
+   impressão:
+   - tirar a casca do app (menu/sidebar);
+   - destravar o layout de tela: `.app-shell` tem `width: 100vw` e
+     `height: 100vh` — na impressão isso é a largura da JANELA, não do
+     papel, e era o que fazia o conteúdo vazar pra fora do A4. Tudo passa a
+     acompanhar a largura útil da página (`@page`, aplicado por
+     `usePaginaImpressao.ts` conforme Configurações → Impressão);
+   - cores sempre do tema claro no papel, mesmo com o sistema em modo
+     escuro (texto claro em fundo branco sumia);
+   - texto longo sem espaço (e-mail, nome de arquivo) quebra dentro da
+     célula em vez de alargar a tabela além da página (ver `.nao-quebrar`). */
+@media print {
+  :root {
+    --bg: #ffffff;
+    --surface: #ffffff;
+    --surface-hover: #f0f0f0;
+    --border: #999999;
+    --text: #000000;
+    --text-muted: #333333;
+    --accent: #000000;
+    --accent-soft: #ffffff;
+  }
+
+  html,
+  body {
+    width: auto !important;
+    height: auto !important;
+    background: #fff !important;
+  }
+
   .top-menu,
   .sidebar {
     display: none !important;
@@ -214,6 +340,7 @@ body {
   .app-shell,
   .app-body {
     display: block !important;
+    width: auto !important;
     height: auto !important;
     overflow: visible !important;
   }
@@ -221,6 +348,43 @@ body {
   .content {
     overflow: visible !important;
     padding: 0 !important;
+    max-width: 100% !important;
+  }
+
+  table {
+    max-width: 100%;
+  }
+
+  /* Tabela longa (livro, extrato, prestação de contas): cabeçalho repete a
+     cada folha e nenhuma linha fica partida entre duas páginas. */
+  thead {
+    display: table-header-group;
+  }
+
+  tr {
+    break-inside: avoid;
+  }
+
+  /* Texto livre sem espaço (e-mail, nome de arquivo) quebra em qualquer
+     ponto, pra nunca alargar a tabela além da página. Colunas de dado
+     curto (nº, data, tipo, situação, valor, CPF) usam `.nao-quebrar`, senão
+     o navegador as espremeria ("24/09/ 2026", "Expe dido"). */
+  td,
+  p,
+  dd,
+  h1,
+  h2,
+  h3 {
+    overflow-wrap: anywhere;
+  }
+
+  .nao-quebrar {
+    white-space: nowrap;
+    overflow-wrap: normal;
+  }
+
+  img {
+    max-width: 100%;
   }
 }
 </style>

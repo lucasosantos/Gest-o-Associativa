@@ -15,3 +15,9 @@
 - Tokens de cor (`--bg`, `--accent`, etc.) são definidos em `:root` de
   [App.vue](../../src/App.vue), incluindo variante `@media (prefers-color-scheme: dark)`.
   Reaproveite esses tokens em vez de cravar cores novas.
+- Tela de impressão (`src/views/Imprimir*.vue`): imprima com o `imprimir()` de
+  [usePaginaImpressao.ts](../../src/composables/usePaginaImpressao.ts)
+  (`"PADRAO"` ou `"RECIBO"`), nunca `window.print()` direto — é ele que aplica o
+  tamanho de papel de Configurações → Impressão (`@page`). Nada de largura fixa
+  maior que a página; em tabela, coluna de dado curto (nº, data, tipo, valor,
+  situação) leva `class="nao-quebrar"` (regra global em `App.vue`).

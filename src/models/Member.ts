@@ -56,6 +56,21 @@ export interface MemberComPessoa extends Member {
   photo: string | null;
 }
 
+/** Ordem da lista impressa de sócios. */
+export type OrdemListaSocios = "NOME" | "MATRICULA";
+
+/** Linha de `MemberModel.listarParaImpressao`. */
+export interface SocioListaImpressao {
+  id: string;
+  registration_number: string;
+  association_date: string;
+  status: StatusSocio;
+  full_name: string;
+  cpf: string | null;
+  rg: string | null;
+  birth_date: string | null;
+}
+
 /** Linha de `MemberModel.listParaExportacao` — sócio + pessoa + contato e endereço principais. */
 export interface SocioExportacao {
   registration_number: string;
@@ -228,6 +243,39 @@ export class MemberModel {
        WHERE m.association_id = $1
        ORDER BY p.full_name`,
       [getCurrentAssociationId()]
+    );
+  }
+
+  /**
+   * Lista impressa de sócios (`ImprimirListaSocios.vue`): matrícula, nome,
+   * data de associação, CPF, RG e nascimento, filtrada pela situação
+   * (`null` = todas). Sem a foto — não vai pro papel e pesaria na consulta.
+   * Ordem por nome ou por matrícula (numérica quando a matrícula é número).
+   */
+  static async listarParaImpressao(
+    situacao: StatusSocio | null,
+    ordem: OrdemListaSocios = "NOME"
+  ): Promise<SocioListaImpressao[]> {
+    const parametros: string[] = [getCurrentAssociationId()];
+    let filtroSituacao = "";
+    if (situacao) {
+      parametros.push(situacao);
+      filtroSituacao = "AND m.status = $2";
+    }
+    const ordenacao =
+      ordem === "MATRICULA"
+        ? "CAST(m.registration_number AS INTEGER), m.registration_number, p.full_name"
+        : "p.full_name";
+
+    const db = await getDatabase();
+    return db.select<SocioListaImpressao[]>(
+      `SELECT m.id, m.registration_number, m.association_date, m.status,
+              p.full_name, p.cpf, p.rg, p.birth_date
+       FROM members m
+       JOIN people p ON p.id = m.person_id
+       WHERE m.association_id = $1 ${filtroSituacao}
+       ORDER BY ${ordenacao}`,
+      parametros
     );
   }
 

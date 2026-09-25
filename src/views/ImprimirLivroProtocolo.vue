@@ -14,6 +14,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -46,9 +47,8 @@ function contraparte(protocolo: ProtocolEntry): string {
   return protocolo.recipient_name ?? "—";
 }
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 onMounted(async () => {
   try {
@@ -107,13 +107,13 @@ onMounted(async () => {
         </thead>
         <tbody>
           <tr v-for="protocolo in protocolos" :key="protocolo.id">
-            <td>{{ formatarNumeroProtocolo(protocolo, livro.prefix) }}</td>
-            <td>{{ formatarData(protocolo.protocol_date) }}</td>
-            <td>{{ DIRECAO_LABEL[protocolo.direction] }}</td>
-            <td>{{ protocolo.document_type }}</td>
+            <td class="nao-quebrar">{{ formatarNumeroProtocolo(protocolo, livro.prefix) }}</td>
+            <td class="nao-quebrar">{{ formatarData(protocolo.protocol_date) }}</td>
+            <td class="nao-quebrar">{{ DIRECAO_LABEL[protocolo.direction] }}</td>
+            <td class="nao-quebrar">{{ protocolo.document_type }}</td>
             <td>{{ protocolo.subject }}</td>
             <td>{{ contraparte(protocolo) }}</td>
-            <td>{{ STATUS_LABEL[protocolo.status] }}</td>
+            <td class="nao-quebrar">{{ STATUS_LABEL[protocolo.status] }}</td>
           </tr>
         </tbody>
       </table>

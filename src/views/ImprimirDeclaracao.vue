@@ -19,6 +19,7 @@ import { flexionar } from "../utils/genero.js";
 import { openModal } from "../composables/useModal.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import DocumentUploadForm from "../modals/DocumentUploadForm.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -63,9 +64,8 @@ const localDataEmissao = computed(() => {
   return local ? `${local}, ${data}.` : `${data}.`;
 });
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 function vincularComoDocumento() {
   if (!socio.value || !protocolo.value) return;
@@ -261,8 +261,13 @@ onMounted(async () => {
     display: none !important;
   }
 
+  /* Documento formal: no papel, sem a moldura de tela — ocupa a largura
+     útil da página (margens vêm do `@page`). */
   .declaracao {
-    border-color: #000;
+    max-width: 100%;
+    padding: 0;
+    border: none;
+    border-radius: 0;
   }
 
   .cabecalho {

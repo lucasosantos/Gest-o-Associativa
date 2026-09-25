@@ -21,6 +21,7 @@ import { ActivityLogModel } from "../models/ActivityLog.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarMoeda, hojeIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const router = useRouter();
 
@@ -59,9 +60,8 @@ function somarValor(itens: Asset[]): number {
   return itens.reduce((soma, bem) => soma + (bem.acquisition_value ?? 0), 0);
 }
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 onMounted(async () => {
   try {
@@ -130,7 +130,7 @@ onMounted(async () => {
             <td colspan="7">{{ grupo.categoria }}</td>
           </tr>
           <tr v-for="bem in grupo.itens" :key="bem.id">
-            <td class="col-numero">{{ bem.asset_number }}</td>
+            <td class="col-numero nao-quebrar">{{ bem.asset_number }}</td>
             <td>
               {{ bem.name }}
               <span v-if="bem.serial_number" class="detalhe">{{ bem.serial_number }}</span>
@@ -143,8 +143,8 @@ onMounted(async () => {
               {{ bem.location || "—" }}
               <span v-if="bem.responsible" class="detalhe">{{ bem.responsible }}</span>
             </td>
-            <td>{{ ROTULO_CONSERVACAO[bem.condition] }}</td>
-            <td>{{ ROTULO_STATUS_BEM[bem.status] }}</td>
+            <td class="nao-quebrar">{{ ROTULO_CONSERVACAO[bem.condition] }}</td>
+            <td class="nao-quebrar">{{ ROTULO_STATUS_BEM[bem.status] }}</td>
             <td class="col-valor">{{ bem.acquisition_value ? formatarMoeda(bem.acquisition_value) : "—" }}</td>
           </tr>
           <tr class="linha-subtotal">
@@ -180,9 +180,9 @@ onMounted(async () => {
           </thead>
           <tbody>
             <tr v-for="bem in baixados" :key="bem.id">
-              <td class="col-numero">{{ bem.asset_number }}</td>
+              <td class="col-numero nao-quebrar">{{ bem.asset_number }}</td>
               <td>{{ bem.name }}</td>
-              <td>{{ formatarData(bem.acquisition_date) }}</td>
+              <td class="nao-quebrar">{{ formatarData(bem.acquisition_date) }}</td>
               <td>
                 {{ bem.disposal_date ? formatarData(bem.disposal_date) : "—" }}
                 <span v-if="bem.disposal_type" class="detalhe">

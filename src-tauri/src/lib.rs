@@ -1582,6 +1582,8 @@ pub fn run() {
             config::set_association_password,
             config::verify_association_password,
             config::remove_association,
+            config::get_print_config,
+            config::set_print_config,
             config::restart_app,
             documents::import_document_file,
             documents::get_document_file_path,

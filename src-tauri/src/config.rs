@@ -33,15 +33,46 @@ pub struct AssociationEntry {
     pub db_path: String,
 }
 
+/// Tamanhos de papel aceitos (códigos que o frontend traduz pra `@page`,
+/// ver `src/composables/usePaginaImpressao.ts`).
+const PAPEIS_PADRAO: [&str; 3] = ["A4", "CARTA", "OFICIO"];
+/// `TERMICA_58`/`TERMICA_80`: bobina de impressora térmica — largura fixa,
+/// altura calculada na hora de imprimir pelo tamanho do recibo.
+const PAPEIS_RECIBO: [&str; 5] = ["A4", "A5", "CARTA", "TERMICA_58", "TERMICA_80"];
+
+/// Papel das impressões — preferência da instalação (impressora/papel da
+/// máquina), não da associação, por isso fica no `config.json` e não no banco.
+/// `default_paper` vale pra relatórios, listas e declarações;
+/// `receipt_paper` pra recibos e comprovantes de protocolo.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PrintConfig {
+    pub default_paper: String,
+    pub receipt_paper: String,
+}
+
+impl Default for PrintConfig {
+    fn default() -> Self {
+        PrintConfig {
+            default_paper: "A4".to_string(),
+            receipt_paper: "A4".to_string(),
+        }
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AppConfig {
     pub associations: Vec<AssociationEntry>,
+    /// `#[serde(default)]`: `config.json` de antes deste campo continua
+    /// sendo lido como formato atual (sem cair na migração do legado).
+    #[serde(default)]
+    pub print: PrintConfig,
 }
 
 impl Default for AppConfig {
     fn default() -> Self {
         AppConfig {
             associations: Vec::new(),
+            print: PrintConfig::default(),
         }
     }
 }
@@ -177,6 +208,7 @@ pub fn load_or_init() -> AppConfig {
                     password_hash: None,
                     db_path: legacy.database.path,
                 }],
+                print: PrintConfig::default(),
             };
             if let Err(err) = save(&config) {
                 eprintln!("não foi possível regravar o config.json migrado: {err}");
@@ -193,6 +225,7 @@ pub fn load_or_init() -> AppConfig {
                 password_hash: None,
                 db_path: legacy_db_path().to_string_lossy().to_string(),
             }],
+            print: PrintConfig::default(),
         };
         if let Err(err) = save(&config) {
             eprintln!("não foi possível criar o config.json a partir do banco legado: {err}");
@@ -408,6 +441,24 @@ fn move_file(from: &Path, to: &Path) -> std::io::Result<()> {
 /// Reinicia o aplicativo — necessário depois de cadastrar uma associação
 /// nova (ver nota em `create_association`) ou mover o arquivo de uma já
 /// existente enquanto ela está conectada.
+#[tauri::command]
+pub fn get_print_config() -> PrintConfig {
+    load_or_init().print
+}
+
+#[tauri::command]
+pub fn set_print_config(print: PrintConfig) -> Result<(), String> {
+    if !PAPEIS_PADRAO.contains(&print.default_paper.as_str()) {
+        return Err(format!("Tamanho de papel inválido: {}", print.default_paper));
+    }
+    if !PAPEIS_RECIBO.contains(&print.receipt_paper.as_str()) {
+        return Err(format!("Tamanho de papel de recibo inválido: {}", print.receipt_paper));
+    }
+    let mut config = load_or_init();
+    config.print = print;
+    save(&config).map_err(|e| format!("Não foi possível salvar o config.json: {e}"))
+}
+
 #[tauri::command]
 pub fn restart_app(app: AppHandle) {
     app.restart();

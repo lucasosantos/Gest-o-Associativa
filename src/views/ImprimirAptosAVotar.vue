@@ -12,6 +12,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarCpf } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const router = useRouter();
 
@@ -23,9 +24,8 @@ const loading = ref(true);
 
 const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 onMounted(async () => {
   try {
@@ -84,9 +84,9 @@ onMounted(async () => {
         <tbody>
           <tr v-for="(socio, indice) in aptos" :key="socio.id">
             <td class="col-numero">{{ indice + 1 }}</td>
-            <td>{{ socio.registration_number }}</td>
+            <td class="nao-quebrar">{{ socio.registration_number }}</td>
             <td>{{ socio.full_name }}</td>
-            <td>{{ socio.cpf ? formatarCpf(socio.cpf) : "—" }}</td>
+            <td class="nao-quebrar">{{ socio.cpf ? formatarCpf(socio.cpf) : "—" }}</td>
             <td class="col-assinatura"></td>
           </tr>
         </tbody>

@@ -13,6 +13,7 @@ import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const route = useRoute();
 const router = useRouter();
@@ -45,9 +46,8 @@ const contraparte = computed(() => {
   return (protocolo.value.direction === "RECEBIDO" ? protocolo.value.sender_name : protocolo.value.recipient_name) ?? "—";
 });
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel de recibo de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("RECIBO");
 
 onMounted(async () => {
   try {
@@ -79,7 +79,7 @@ onMounted(async () => {
         <button type="button" class="btn-primary" @click="imprimir">Imprimir</button>
       </div>
 
-      <div class="comprovante">
+      <div class="comprovante documento-recibo">
         <header class="cabecalho">
           <PrintHeader v-if="associacao" :association="associacao" :address="endereco" />
           <h1>Protocolo {{ formatarNumeroProtocolo(protocolo, protocolo.book_prefix) }}</h1>
@@ -222,6 +222,20 @@ onMounted(async () => {
 @media print {
   .no-print {
     display: none !important;
+  }
+
+  /* Papel de recibo (Configurações → Impressão): a caixa acompanha a
+     largura útil da página — cabe em A5 — e não se divide em duas folhas. */
+  .comprovante {
+    max-width: 100%;
+    padding: 1.25rem 1.5rem;
+    border-radius: 0;
+    break-inside: avoid;
+  }
+
+  .detalhes {
+    grid-template-columns: max-content 1fr;
+    column-gap: 1rem;
   }
 
   .comprovante {

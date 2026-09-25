@@ -2,9 +2,20 @@
 // Administra o registro de associações do config.json: renomear, mover o
 // arquivo do banco, definir/trocar/remover senha e remover a entrada. A
 // tela Início cuida só de escolher/desbloquear e cadastrar uma nova — esta
-// aqui é o lugar para mexer nas já existentes.
+// aqui é o lugar para mexer nas já existentes. Também guarda o tamanho do
+// papel das impressões (padrão e recibo), aplicado por `usePaginaImpressao`.
 import { onMounted, ref } from "vue";
-import { listAssociations, getConfigFilePath, removeAssociation, type AssociationSummary } from "../services/config.js";
+import {
+  listAssociations,
+  getConfigFilePath,
+  removeAssociation,
+  getPrintConfig,
+  setPrintConfig,
+  type AssociationSummary,
+  type PapelPadrao,
+  type PapelRecibo,
+} from "../services/config.js";
+import { ROTULO_PAPEL } from "../composables/usePaginaImpressao.js";
 import {
   currentAssociationConfigId,
   isAssociationConnected,
@@ -18,14 +29,35 @@ const loading = ref(true);
 const associacoes = ref<AssociationSummary[]>([]);
 const configFilePath = ref("");
 
+// --- Impressão (papel padrão e papel de recibo, também no config.json) ---
+const PAPEIS_PADRAO: PapelPadrao[] = ["A4", "CARTA", "OFICIO"];
+const PAPEIS_RECIBO: PapelRecibo[] = ["A4", "A5", "CARTA", "TERMICA_58", "TERMICA_80"];
+const papelPadrao = ref<PapelPadrao>("A4");
+const papelRecibo = ref<PapelRecibo>("A4");
+const mensagemImpressao = ref("");
+const erroImpressao = ref("");
+
 async function carregar() {
   loading.value = true;
   try {
-    const [lista, caminho] = await Promise.all([listAssociations(), getConfigFilePath()]);
+    const [lista, caminho, impressao] = await Promise.all([listAssociations(), getConfigFilePath(), getPrintConfig()]);
     associacoes.value = lista;
     configFilePath.value = caminho;
+    papelPadrao.value = impressao.default_paper;
+    papelRecibo.value = impressao.receipt_paper;
   } finally {
     loading.value = false;
+  }
+}
+
+async function salvarImpressao() {
+  mensagemImpressao.value = "";
+  erroImpressao.value = "";
+  try {
+    await setPrintConfig({ default_paper: papelPadrao.value, receipt_paper: papelRecibo.value });
+    mensagemImpressao.value = "Salvo — vale para as próximas impressões.";
+  } catch (error) {
+    erroImpressao.value = `Não foi possível salvar: ${error instanceof Error ? error.message : error}`;
   }
 }
 
@@ -105,6 +137,34 @@ async function remover(associacao: AssociationSummary) {
         Arquivo de configurações: <code>{{ configFilePath }}</code>
       </p>
     </div>
+
+    <div v-if="!loading" class="settings-group">
+      <h3>Impressão</h3>
+      <p class="group-desc">
+        Tamanho do papel usado nas impressões desta instalação. Na janela de impressão, deixe a escala em
+        "Padrão"/100% e o mesmo papel selecionado na impressora.
+      </p>
+
+      <div class="print-grid">
+        <div class="field">
+          <label class="field-label" for="papel-padrao">Impressão padrão</label>
+          <select id="papel-padrao" v-model="papelPadrao" @change="salvarImpressao">
+            <option v-for="papel in PAPEIS_PADRAO" :key="papel" :value="papel">{{ ROTULO_PAPEL[papel] }}</option>
+          </select>
+          <span class="field-hint">Relatórios, listas, livro de protocolo, extrato, declarações e atividades.</span>
+        </div>
+        <div class="field">
+          <label class="field-label" for="papel-recibo">Impressão de recibo</label>
+          <select id="papel-recibo" v-model="papelRecibo" @change="salvarImpressao">
+            <option v-for="papel in PAPEIS_RECIBO" :key="papel" :value="papel">{{ ROTULO_PAPEL[papel] }}</option>
+          </select>
+          <span class="field-hint">Recibos de mensalidade e de acordo, e comprovante de protocolo.</span>
+        </div>
+      </div>
+
+      <p v-if="mensagemImpressao" class="mensagem ok">{{ mensagemImpressao }}</p>
+      <p v-if="erroImpressao" class="mensagem erro">{{ erroImpressao }}</p>
+    </div>
   </section>
 </template>
 
@@ -121,6 +181,52 @@ async function remover(associacao: AssociationSummary) {
 .settings-group h3 {
   margin: 0 0 0.9rem;
   font-size: 1.05rem;
+}
+
+.print-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 1rem;
+  margin-top: 1rem;
+}
+
+.field-label {
+  display: block;
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-bottom: 0.35rem;
+}
+
+.field select {
+  width: 100%;
+  padding: 0.5rem 0.65rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+}
+
+.field-hint {
+  display: block;
+  margin-top: 0.35rem;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+}
+
+.mensagem {
+  margin: 0.9rem 0 0;
+  font-size: 0.82rem;
+}
+
+.mensagem.ok {
+  color: var(--accent);
+}
+
+.mensagem.erro {
+  color: #c0392b;
 }
 
 .group-desc {

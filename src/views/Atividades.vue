@@ -22,6 +22,7 @@ import { setSidebarTools } from "../composables/useSidebar.js";
 import { useAssociationScopedData } from "../composables/useAssociationScopedData.js";
 import { formatarData, formatarDiaPorExtenso, formatarHora, hojeLocalIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
+import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
 const router = useRouter();
 
@@ -100,9 +101,8 @@ function limparFiltros() {
   carregarDia();
 }
 
-function imprimir() {
-  window.print();
-}
+// Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
+const { imprimir } = usePaginaImpressao("PADRAO");
 
 /** Ficha do registro ligado à atividade, quando existe uma tela pra ele. */
 function destino(atividade: ActivityLog): RouteLocationRaw | null {
@@ -189,7 +189,7 @@ onMounted(() => {
       </thead>
       <tbody>
         <tr v-for="atividade in atividades" :key="atividade.id">
-          <td class="hora">{{ formatarHora(atividade.created_at) }}</td>
+          <td class="hora nao-quebrar">{{ formatarHora(atividade.created_at) }}</td>
           <td class="modulo">
             <span class="badge">{{ ROTULO_MODULO_ATIVIDADE[atividade.module] }}</span>
           </td>
