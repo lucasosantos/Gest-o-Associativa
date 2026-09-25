@@ -10,7 +10,7 @@ use std::path::Path;
 /// Acima disso o app recusa: um CSV de sócios com milhares de linhas fica
 /// bem abaixo desse teto — um arquivo maior quase certamente foi escolhido
 /// por engano, e o conteúdo inteiro atravessa o IPC como string.
-const TAMANHO_MAXIMO_TEXTO: u64 = 20 * 1024 * 1024;
+const TAMANHO_MAXIMO_TEXTO: u64 = 50 * 1024 * 1024;
 
 /// Lê um arquivo de texto (UTF-8). Se não for UTF-8 válido, cai para
 /// Latin-1/Windows-1252 — CSV salvo pelo Excel no Windows sem a opção
@@ -20,7 +20,7 @@ pub fn read_text_file(path: String) -> Result<String, String> {
     let caminho = Path::new(&path);
     let metadata = fs::metadata(caminho).map_err(|e| format!("não foi possível ler o arquivo escolhido: {e}"))?;
     if metadata.len() > TAMANHO_MAXIMO_TEXTO {
-        return Err("Arquivo muito grande — escolha um arquivo de até 20 MB.".to_string());
+        return Err("Arquivo muito grande — escolha um arquivo de até 50 MB.".to_string());
     }
 
     let bytes = fs::read(caminho).map_err(|e| format!("não foi possível ler o arquivo escolhido: {e}"))?;

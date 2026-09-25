@@ -3,9 +3,10 @@
 - Migrations SQLite ficam todas em `migrations` dentro de
   [lib.rs](../../src-tauri/src/lib.rs), registradas via `tauri-plugin-sql`.
   **São append-only**: nunca edite uma `Migration` já existente — toda mudança de
-  schema é uma nova entrada com `version` incrementado. Hoje a lista está vazia
-  (base neutra, sem tabelas de domínio); a primeira migration de um novo
-  módulo começa em `version: 1`.
+  schema é uma nova entrada com `version` incrementado (hoje a última é
+  `version: 24`). Só declare `REFERENCES` para tabela que já existe — o
+  `sqlx` liga `PRAGMA foreign_keys = ON` e não dá pra desligar dentro da
+  transação da migration (ver `docs/plano-implementacao.md`).
 - SQLite não aceita `DEFAULT CURRENT_TIMESTAMP` em `ALTER TABLE ... ADD COLUMN`.
   Para adicionar `created_at`/`updated_at` a uma tabela já existente: coluna sem
   default → `UPDATE` de backfill → um trigger `AFTER INSERT` e um `AFTER UPDATE`
