@@ -361,6 +361,12 @@ body {
     display: table-header-group;
   }
 
+  /* Total (tfoot) sai uma vez só, no fim da tabela — o padrão do navegador
+     é repetir o rodapé em toda folha, o que confunde em relatório. */
+  tfoot {
+    display: table-row-group;
+  }
+
   tr {
     break-inside: avoid;
   }

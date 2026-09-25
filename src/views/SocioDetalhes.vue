@@ -7,7 +7,11 @@ import { MemberDependentModel, type MemberDependent } from "../models/MemberDepe
 import { MemberRepresentativeModel, type MemberRepresentative } from "../models/MemberRepresentative.js";
 import { DocumentLinkModel, type DocumentLinkComDocumento } from "../models/DocumentLink.js";
 import { MembershipPaymentModel, type MensalidadeLinha, type StatusMensalidade } from "../models/MembershipPayment.js";
-import { formatarData, formatarCpf, formatarCompetencia } from "../utils/format.js";
+import { formatarData, formatarCompetencia } from "../utils/format.js";
+import { montarFichaSocio } from "../utils/fichaSocio.js";
+import { PersonModel, type Person } from "../models/Person.js";
+import { MembershipPlanModel } from "../models/MembershipPlan.js";
+import { currentMembershipMode } from "../composables/useCurrentAssociation.js";
 import { setSidebarTools } from "../composables/useSidebar.js";
 import { openModal } from "../composables/useModal.js";
 import { useAssociationScopedData } from "../composables/useAssociationScopedData.js";
@@ -27,6 +31,9 @@ const router = useRouter();
 const memberId = computed(() => String(route.params.id));
 
 const socio = ref<MemberComPessoa | null>(null);
+/** Pessoa completa (o `MemberComPessoa` só traz nome/CPF/gênero/foto) — aba Dados. */
+const pessoa = ref<Person | null>(null);
+const nomePlano = ref<string | null>(null);
 const contatos = ref<PersonContact[]>([]);
 const dependentes = ref<MemberDependent[]>([]);
 const representantes = ref<MemberRepresentative[]>([]);
@@ -190,13 +197,17 @@ async function carregar() {
     socio.value = encontrado;
     if (!encontrado) return;
 
-    const [c, d, r, h, docs] = await Promise.all([
+    const [p, planos, c, d, r, h, docs] = await Promise.all([
+      PersonModel.get(encontrado.person_id),
+      encontrado.membership_plan_id ? MembershipPlanModel.list() : Promise.resolve([]),
       PersonContactModel.listByPerson(encontrado.person_id),
       MemberDependentModel.listByMember(encontrado.id),
       MemberRepresentativeModel.listByMember(encontrado.id),
       MemberModel.statusHistory(encontrado.id),
       DocumentLinkModel.listForEntity("MEMBER", encontrado.id),
     ]);
+    pessoa.value = p;
+    nomePlano.value = planos.find((plano) => plano.id === encontrado.membership_plan_id)?.name ?? null;
     contatos.value = c;
     dependentes.value = d;
     representantes.value = r;
@@ -205,6 +216,24 @@ async function carregar() {
   } finally {
     loading.value = false;
   }
+}
+
+// --- Aba Dados: todos os campos de `people` + `members`, inclusive os
+// vazios — montados em `utils/fichaSocio.ts` (mesma fonte da ficha impressa). ---
+const secoesDados = computed(() =>
+  socio.value
+    ? montarFichaSocio({
+        socio: socio.value,
+        pessoa: pessoa.value,
+        nomePlano: nomePlano.value,
+        modoMensalidade: currentMembershipMode.value,
+      })
+    : []
+);
+
+/** Ficha cadastral impressa (mesmos campos da aba Dados + foto). */
+function abrirImprimirFicha() {
+  router.push({ name: "ficha-socio-imprimir", params: { id: memberId.value } });
 }
 
 function abrirEdicao() {
@@ -245,6 +274,11 @@ function abrirNovoRepresentante() {
   });
 }
 
+/** Abre o relatório financeiro (consulta; período padrão: associação até hoje, ajustável lá). */
+function abrirRelatorioFinanceiro() {
+  router.push({ name: "relatorio-financeiro-socio", params: { id: memberId.value } });
+}
+
 function abrirGerarDeclaracao() {
   if (!socio.value) return;
   openModal({
@@ -271,7 +305,9 @@ function atualizarSidebar() {
   const itensBase = [
     { id: "editar", label: "Editar sócio", icon: "edit", onClick: abrirEdicao },
     { id: "situacao", label: "Alterar situação", icon: "clock", onClick: abrirAlterarSituacao },
+    { id: "imprimir-ficha", label: "Imprimir ficha", icon: "file", onClick: abrirImprimirFicha },
     { id: "declaracao", label: "Gerar declaração", icon: "file", onClick: abrirGerarDeclaracao },
+    { id: "relatorio-financeiro", label: "Gerar relatório financeiro", icon: "dollar", onClick: abrirRelatorioFinanceiro },
   ];
 
   const itensPorAba: Record<string, { id: string; label: string; icon: string; onClick: () => void }[]> = {
@@ -354,16 +390,17 @@ onMounted(atualizarSidebar);
       </div>
 
       <div class="tab-content">
-        <dl v-if="abaAtiva === 'dados'" class="data-list">
-          <dt>CPF</dt>
-          <dd>{{ socio.cpf ? formatarCpf(socio.cpf) : "—" }}</dd>
-          <dt>Mensalidade legado</dt>
-          <dd>
-            {{ socio.dues_start_date ? `Considerada a partir de ${formatarData(socio.dues_start_date)}` : "—" }}
-          </dd>
-          <dt>Observações</dt>
-          <dd>{{ socio.observations || "—" }}</dd>
-        </dl>
+        <div v-if="abaAtiva === 'dados'" class="dados-ficha">
+          <section v-for="secao in secoesDados" :key="secao.titulo" class="secao-dados">
+            <h3>{{ secao.titulo }}</h3>
+            <dl class="data-list">
+              <template v-for="campo in secao.campos" :key="campo.rotulo">
+                <dt>{{ campo.rotulo }}</dt>
+                <dd :class="{ vazio: !campo.valor }">{{ campo.valor || "—" }}</dd>
+              </template>
+            </dl>
+          </section>
+        </div>
 
         <div v-else-if="abaAtiva === 'contatos'">
           <p v-if="contatos.length === 0" class="state-msg">Nenhum contato cadastrado.</p>
@@ -599,9 +636,28 @@ onMounted(atualizarSidebar);
   color: var(--text);
 }
 
+.secao-dados {
+  margin-bottom: 1.5rem;
+}
+
+.secao-dados h3 {
+  margin: 0 0 0.6rem;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+}
+
+.data-list dd.vazio {
+  color: var(--text-muted);
+}
+
 .data-list {
   display: grid;
-  grid-template-columns: 160px 1fr;
+  grid-template-columns: 180px 1fr;
   row-gap: 0.6rem;
   font-size: 0.88rem;
 }

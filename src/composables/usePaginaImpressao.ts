@@ -60,14 +60,18 @@ const ID_ESTILO = "estilo-pagina-impressao";
  * (ex.: recibo em bobina térmica, ver `.documento-recibo` em `App.vue`).
  * Devolve `imprimir()`, que espera o papel estar aplicado antes de abrir a
  * impressão do sistema — use no lugar de `window.print()` direto.
+ * `opcoes.margem` troca a margem padrão do papel só pra esta tela.
  *
  * Bobina térmica: o recibo é desenhado na largura da bobina já na tela (a
  * pré-visualização é o que sai no papel), e `imprimir()` mede a altura do
  * `.documento-recibo` pra criar uma página exatamente desse tamanho — sem
  * isso a impressora puxaria uma folha inteira de papel em branco.
  */
-export function usePaginaImpressao(tipo: TipoImpressao): { imprimir: () => Promise<void> } {
-  const aplicado = aplicar(tipo);
+export function usePaginaImpressao(
+  tipo: TipoImpressao,
+  opcoes: { margem?: string } = {}
+): { imprimir: () => Promise<void> } {
+  const aplicado = aplicar(tipo, opcoes.margem);
   onUnmounted(remover);
 
   return {
@@ -79,7 +83,8 @@ export function usePaginaImpressao(tipo: TipoImpressao): { imprimir: () => Promi
   };
 }
 
-async function aplicar(tipo: TipoImpressao): Promise<PapelFolha | PapelBobina> {
+/** `margem`: sobrepõe a margem padrão do papel (só folha, não bobina) — ex.: ficha do sócio, mais arejada. */
+async function aplicar(tipo: TipoImpressao, margem?: string): Promise<PapelFolha | PapelBobina> {
   let codigo: Papel = "A4";
   try {
     const config = await getPrintConfig();
@@ -105,7 +110,7 @@ async function aplicar(tipo: TipoImpressao): Promise<PapelFolha | PapelBobina> {
     // Altura provisória — `ajustarAlturaBobina` troca pela medida real antes de imprimir.
     estilo.textContent = `@page { size: ${papel.larguraMm}mm 200mm; margin: 0; }`;
   } else {
-    estilo.textContent = `@page { size: ${papel.size}; margin: ${papel.margem}; }`;
+    estilo.textContent = `@page { size: ${papel.size}; margin: ${margem ?? papel.margem}; }`;
   }
   return papel;
 }

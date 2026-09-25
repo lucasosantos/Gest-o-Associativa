@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { save as saveDialog } from "@tauri-apps/plugin-dialog";
 import { MemberModel, type MemberComPessoa } from "../models/Member.js";
@@ -82,6 +82,65 @@ async function exportarCsv() {
   }
 }
 
+// --- Ordenação por clique no título da coluna ---
+// Feita aqui mesmo, sobre a lista já carregada (busca/filtro continuam no
+// model). 1º clique numa coluna = crescente; clicar de novo inverte.
+type ColunaOrdenavel = "matricula" | "nome" | "cpf" | "situacao" | "associacao";
+
+const colunaOrdem = ref<ColunaOrdenavel>("nome");
+const ordemCrescente = ref(true);
+
+/** `numeric: true` → matrícula "2" antes de "10"; `sensitivity: "base"` ignora acento/maiúscula no nome. */
+const comparadorTexto = new Intl.Collator("pt-BR", { numeric: true, sensitivity: "base" });
+
+function valorOrdenacao(socio: MemberComPessoa, coluna: ColunaOrdenavel): string | null {
+  switch (coluna) {
+    case "matricula":
+      return socio.registration_number;
+    case "nome":
+      return socio.full_name;
+    case "cpf":
+      return socio.cpf;
+    case "situacao":
+      return STATUS_LABEL[socio.status] ?? socio.status;
+    case "associacao":
+      return socio.association_date; // ISO — ordem de texto = ordem de data
+  }
+}
+
+const sociosOrdenados = computed(() => {
+  const sinal = ordemCrescente.value ? 1 : -1;
+  return [...socios.value].sort((a, b) => {
+    const va = valorOrdenacao(a, colunaOrdem.value);
+    const vb = valorOrdenacao(b, colunaOrdem.value);
+    // Campo vazio (ex.: sem CPF) sempre no fim, nos dois sentidos.
+    if (!va || !vb) return va === vb ? 0 : va ? -1 : 1;
+    return sinal * comparadorTexto.compare(va, vb) || comparadorTexto.compare(a.full_name, b.full_name);
+  });
+});
+
+function ordenarPor(coluna: ColunaOrdenavel) {
+  if (colunaOrdem.value === coluna) {
+    ordemCrescente.value = !ordemCrescente.value;
+  } else {
+    colunaOrdem.value = coluna;
+    ordemCrescente.value = true;
+  }
+}
+
+function indicadorOrdem(coluna: ColunaOrdenavel): string {
+  if (colunaOrdem.value !== coluna) return "";
+  return ordemCrescente.value ? "▲" : "▼";
+}
+
+const COLUNAS_TABELA: { coluna: ColunaOrdenavel; titulo: string }[] = [
+  { coluna: "matricula", titulo: "Matrícula" },
+  { coluna: "nome", titulo: "Nome" },
+  { coluna: "cpf", titulo: "CPF" },
+  { coluna: "situacao", titulo: "Situação" },
+  { coluna: "associacao", titulo: "Associado em" },
+];
+
 const STATUS_LABEL: Record<string, string> = {
   PENDENTE: "Pendente",
   ATIVO: "Ativo",
@@ -141,15 +200,26 @@ onMounted(() => {
       <thead>
         <tr>
           <th></th>
-          <th>Matrícula</th>
-          <th>Nome</th>
-          <th>CPF</th>
-          <th>Situação</th>
-          <th>Associado em</th>
+          <th
+            v-for="item in COLUNAS_TABELA"
+            :key="item.coluna"
+            :aria-sort="colunaOrdem === item.coluna ? (ordemCrescente ? 'ascending' : 'descending') : 'none'"
+          >
+            <button
+              type="button"
+              class="th-ordenar"
+              :class="{ ativo: colunaOrdem === item.coluna }"
+              :title="`Ordenar por ${item.titulo.toLowerCase()}`"
+              @click="ordenarPor(item.coluna)"
+            >
+              {{ item.titulo }}
+              <span class="seta">{{ indicadorOrdem(item.coluna) }}</span>
+            </button>
+          </th>
         </tr>
       </thead>
       <tbody>
-        <tr v-for="socio in socios" :key="socio.id" class="row-link" @click="abrirFicha(socio.id)">
+        <tr v-for="socio in sociosOrdenados" :key="socio.id" class="row-link" @click="abrirFicha(socio.id)">
           <td>
             <img v-if="socio.photo" :src="socio.photo" alt="" class="photo-thumb" />
             <div v-else class="photo-thumb photo-thumb-vazio"></div>
@@ -238,6 +308,31 @@ onMounted(() => {
   text-transform: uppercase;
   letter-spacing: 0.03em;
   border-bottom: 1px solid var(--border);
+}
+
+.th-ordenar {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0;
+  border: none;
+  background: none;
+  font: inherit;
+  color: inherit;
+  text-transform: inherit;
+  letter-spacing: inherit;
+  cursor: pointer;
+}
+
+.th-ordenar:hover,
+.th-ordenar.ativo {
+  color: var(--accent);
+}
+
+.seta {
+  display: inline-block;
+  min-width: 0.7em;
+  font-size: 0.65rem;
 }
 
 .member-table td {

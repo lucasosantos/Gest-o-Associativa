@@ -43,6 +43,22 @@ export const routes: RouteRecordRaw[] = [
     meta: { hidden: true },
   },
   {
+    path: "/socios/:id/ficha/imprimir",
+    name: "ficha-socio-imprimir",
+    component: () => import("../views/ImprimirFichaSocio.vue"),
+    // Sem meta.label: só alcançável pelo botão "Imprimir ficha" da ficha do sócio.
+    meta: { hidden: true },
+  },
+  {
+    path: "/socios/:id/relatorio-financeiro",
+    name: "relatorio-financeiro-socio",
+    component: () => import("../views/RelatorioFinanceiroSocio.vue"),
+    // Sem meta.label: só alcançável pelo botão "Gerar relatório financeiro"
+    // da ficha do sócio. Página de consulta (imprimir é opcional); período
+    // via query `?inicio=&fim=`.
+    meta: { hidden: true },
+  },
+  {
     path: "/socios/:id/editar",
     name: "socio-editar",
     component: () => import("../views/SocioForm.vue"),

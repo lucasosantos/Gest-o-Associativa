@@ -1409,6 +1409,45 @@ stubs de banco, em quatro cenários (colunas fora de ordem + extra,
 células em branco + endereço incompleto, coluna essencial ausente, célula
 essencial em branco).
 
+## Mudança pós-MVP — relatório financeiro do sócio ✅ concluída (2026-09-25)
+
+Botão "Gerar relatório financeiro" na ficha do sócio
+([SocioDetalhes.vue](../src/views/SocioDetalhes.vue)) → página de
+**consulta** [RelatorioFinanceiroSocio.vue](../src/views/RelatorioFinanceiroSocio.vue)
+(`/socios/:id/relatorio-financeiro?inicio=&fim=`; sem query, da data de
+associação até hoje; período ajustável na própria página). Imprimir é
+opcional, pelo botão da página — primeira versão abria imprimindo, como as
+`Imprimir*.vue`, e o usuário pediu pra ser só visualização. Só a impressão
+entra no histórico de atividades. Mostra dados do sócio, resumo (pagas de N,
+total pago, quantas via acordo, vencidas sem pagamento com valor em
+atraso ESTIMADO pelo valor mensal atual — o sistema não guarda valor
+devido de mês não pago —, em aberto a vencer) e a tabela mês a mês
+(competência, vencimento, situação, pago em, forma, recibo, valor). Filtro
+pela competência (mês), não pelo dia. Dados de
+`MembershipPaymentModel.relatorioDoSocio`; `MensalidadeLinha` ganhou
+`payment_method`. CSS global de impressão: `tfoot` não repete mais em cada
+folha (valia também pro balanço de patrimônio). Validado em PDF A4 com 24
+meses (Chrome headless, CSS real).
+
+## Mudança pós-MVP — aba Dados completa e ficha do sócio impressa ✅ concluída (2026-09-25)
+
+A aba Dados de [SocioDetalhes.vue](../src/views/SocioDetalhes.vue) passou a
+mostrar TODOS os campos de `people` + `members` (inclusive vazios, com
+"—"), em três seções: dados pessoais, vínculo com a associação e registro
+(cadastrado em / última alteração). Botão "Imprimir ficha" na sidebar →
+[ImprimirFichaSocio.vue](../src/views/ImprimirFichaSocio.vue)
+(`/socios/:id/ficha/imprimir`, abre imprimindo): cabeçalho da associação,
+foto 3×4 (ou quadro vazio), os mesmos campos em duas colunas. Aba e ficha
+usam a mesma fonte, [fichaSocio.ts](../src/utils/fichaSocio.ts)
+(`montarFichaSocio`) — campo novo entra lá e aparece nas duas. Contatos,
+dependentes, representantes e endereço (tabelas próprias) ficam de fora.
+Versão compacta (a pedido): foto 21×28 mm, letra ~0,76rem, margem de
+20 mm só nesta tela (`usePaginaImpressao("PADRAO", { margem: "20mm" })` —
+o composable ganhou a opção `margem`). Validado em PDF A4 (Chrome
+headless, CSS real) no pior caso — todos os campos preenchidos, anotações
+e observações longas, foto e cabeçalho completo —: uma folha, sobrando
+~1/6 da página.
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:

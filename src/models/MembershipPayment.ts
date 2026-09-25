@@ -57,8 +57,30 @@ export interface MensalidadeLinha {
   paid_amount: number | null;
   paid_at: string | null;
   receipt_number: string | null;
+  /** Forma de pagamento registrada no pagamento (texto livre, ex.: "PIX"). */
+  payment_method: string | null;
   /** Preenchido quando esta parcela foi quitada por um acordo de renegociação, não por pagamento integral normal (ver `MembershipAgreementModel`). */
   membership_agreement_id: string | null;
+}
+
+/** Resultado de `MembershipPaymentModel.relatorioDoSocio`. Valores em centavos. */
+export interface RelatorioFinanceiroSocio {
+  linhas: MensalidadeLinha[];
+  totais: {
+    /** Meses (competências) do período dentro da vigência do sócio. */
+    meses: number;
+    pagas: number;
+    valorPago: number;
+    /** Das pagas, quantas foram quitadas por acordo de renegociação. */
+    viaAcordo: number;
+    vencidas: number;
+    /** Ainda não vencidas e não pagas. */
+    abertas: number;
+    /** Valor mensal atual do sócio (0 se não houver valor definido). */
+    valorMensal: number;
+    /** `vencidas × valorMensal` — estimativa, ver `relatorioDoSocio`. */
+    estimativaEmAtraso: number;
+  };
 }
 
 export interface FiltroMensalidade {
@@ -160,13 +182,14 @@ export class MembershipPaymentModel {
         paid_amount: number | null;
         paid_at: string | null;
         receipt_number: string | null;
+        payment_method: string | null;
         membership_agreement_id: string | null;
       }[]
     >(
       `SELECT m.id AS member_id, pe.full_name AS full_name, m.registration_number AS registration_number,
               pa.id AS parcela_id, pa.competence_month AS competence_month,
               mp.id AS payment_id, mp.paid_amount AS paid_amount, mp.paid_at AS paid_at, mp.receipt_number AS receipt_number,
-              mp.membership_agreement_id AS membership_agreement_id
+              mp.payment_method AS payment_method, mp.membership_agreement_id AS membership_agreement_id
        FROM members m
        JOIN people pe ON pe.id = m.person_id
        JOIN parcelas pa
@@ -208,6 +231,45 @@ export class MembershipPaymentModel {
     const todas = await MembershipPaymentModel.buscarLinhas({ memberId }, false);
     const inicio = (paginacao.page - 1) * paginacao.pageSize;
     return { items: todas.slice(inicio, inicio + paginacao.pageSize), total: todas.length };
+  }
+
+  /**
+   * Relatório financeiro de um sócio (`RelatorioFinanceiroSocio.vue`):
+   * todas as mensalidades cuja competência cai entre `inicio` e `fim`
+   * (datas ISO; conta o mês, não o dia), em ordem cronológica, com os
+   * totais do período. O valor em atraso é ESTIMADO pelo valor mensal atual
+   * do sócio (`valorMensalSugerido`) — o sistema não guarda o valor devido
+   * de meses não pagos, só o que foi efetivamente pago.
+   */
+  static async relatorioDoSocio(memberId: string, inicio: string, fim: string): Promise<RelatorioFinanceiroSocio> {
+    const [todas, valorMensal] = await Promise.all([
+      MembershipPaymentModel.buscarLinhas({ memberId }, false),
+      MembershipPaymentModel.valorMensalSugerido(memberId),
+    ]);
+    const mesInicio = inicio.slice(0, 7);
+    const mesFim = fim.slice(0, 7);
+    const linhas = todas
+      .filter((linha) => {
+        const mes = linha.competence_month.slice(0, 7);
+        return mes >= mesInicio && mes <= mesFim;
+      })
+      .sort((a, b) => a.competence_month.localeCompare(b.competence_month));
+
+    const pagas = linhas.filter((linha) => linha.status === "PAGO");
+    const vencidas = linhas.filter((linha) => linha.status === "VENCIDO").length;
+    return {
+      linhas,
+      totais: {
+        meses: linhas.length,
+        pagas: pagas.length,
+        valorPago: pagas.reduce((soma, linha) => soma + (linha.paid_amount ?? 0), 0),
+        viaAcordo: pagas.filter((linha) => linha.membership_agreement_id).length,
+        vencidas,
+        abertas: linhas.filter((linha) => linha.status === "ABERTO").length,
+        valorMensal,
+        estimativaEmAtraso: vencidas * valorMensal,
+      },
+    };
   }
 
   /**
