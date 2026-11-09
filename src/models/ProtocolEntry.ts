@@ -66,7 +66,7 @@ export function formatarNumeroProtocolo(entry: Pick<ProtocolEntry, "number" | "y
 /**
  * Acesso à tabela `protocol_entries`. Protocolos lançados não são apagados
  * — só cancelados via mudança de `status` (ver
- * `docs/dominio-associacoes.md`, seção 2.6 e regra da seção 6).
+ * `.claude/docs/dominio-associacoes.md`, seção 2.6 e regra da seção 6).
  */
 export class ProtocolEntryModel {
   static async list(filtros?: { protocolBookId?: string; status?: StatusProtocolo }): Promise<ProtocolEntryComLivro[]> {

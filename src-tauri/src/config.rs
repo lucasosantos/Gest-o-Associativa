@@ -4,7 +4,7 @@
 // versionado ou movido junto com a instalação.
 //
 // O app voltou ao modelo "1 arquivo `.db` por associação" (ver
-// docs/plano-implementacao.md, mudança pós-MVP de reorganização de acesso):
+// .claude/docs/plano-implementacao.md, mudança pós-MVP de reorganização de acesso):
 // `config.json` guarda a LISTA de associações cadastradas nesta instalação
 // — nome, hash de senha (opcional) e o caminho do `lc3database.db` de cada
 // uma. Trocar de associação é trocar de conexão SQLite para outro arquivo;

@@ -13,7 +13,7 @@ export interface FinancialAccount {
   bank_name: string | null;
   agency: string | null;
   account_number_masked: string | null;
-  /** Centavos (ver convenção de dinheiro em `docs/plano-implementacao.md`). */
+  /** Centavos (ver convenção de dinheiro em `.claude/docs/plano-implementacao.md`). */
   opening_balance: number;
   opening_date: string;
   is_active: 0 | 1;
@@ -41,7 +41,7 @@ export type AtualizacaoContaFinanceira = Partial<NovaContaFinanceira> & { is_act
 /**
  * O saldo de uma conta NUNCA é persistido — é sempre calculado a partir de
  * `opening_balance` + a soma assinada dos lançamentos confirmados (ver
- * decisão em `docs/plano-implementacao.md`, Etapa 3, para não haver saldo
+ * decisão em `.claude/docs/plano-implementacao.md`, Etapa 3, para não haver saldo
  * divergente do que os lançamentos realmente somam).
  *
  * Um lançamento com `status = 'ESTORNADA'` continua contando com seu sinal

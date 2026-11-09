@@ -2,7 +2,7 @@ import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { comAtividade } from "./ActivityLog.js";
 
-/** Situação cadastral da associação (ver docs/dominio-associacoes.md, seção 4.1). */
+/** Situação cadastral da associação (ver .claude/docs/dominio-associacoes.md, seção 4.1). */
 export type StatusAssociacao = "ATIVA" | "INATIVA" | "ENCERRADA";
 
 /**

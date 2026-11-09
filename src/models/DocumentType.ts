@@ -7,7 +7,7 @@ import { comAtividade } from "./ActivityLog.js";
  * Espelha a tabela `document_types` (migration `version: 7`). Classifica os
  * documentos (estatuto, ata, ofício, portaria, contrato, procuração,
  * documento cadastral, correspondência recebida etc. — ver
- * `docs/dominio-associacoes.md`, seção 4.5).
+ * `.claude/docs/dominio-associacoes.md`, seção 4.5).
  */
 export interface DocumentType {
   id: string;

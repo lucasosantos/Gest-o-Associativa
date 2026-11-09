@@ -214,7 +214,7 @@ export class CashTransactionModel {
    * Transferência entre contas da própria associação: gera dois lançamentos
    * vinculados por um mesmo `transfer_group_id` — uma saída na origem, uma
    * entrada no destino. Não entram como receita/despesa operacional nos
-   * relatórios (ver `docs/dominio-associacoes.md`, seção 2.4).
+   * relatórios (ver `.claude/docs/dominio-associacoes.md`, seção 2.4).
    */
   static async transfer(dados: NovaTransferencia): Promise<void> {
     if (dados.from_account_id === dados.to_account_id) {
@@ -251,7 +251,7 @@ export class CashTransactionModel {
   /**
    * Estorna um lançamento: cria um novo lançamento do tipo `ESTORNO` com o
    * efeito inverso e marca o original como `ESTORNADA` — nunca apaga nem
-   * altera o valor do registro original (ver `docs/dominio-associacoes.md`,
+   * altera o valor do registro original (ver `.claude/docs/dominio-associacoes.md`,
    * seção 6, regra de estorno). Um lançamento só pode ser estornado uma vez
    * (garantido por `UNIQUE(original_transaction_id)` em
    * `cash_transaction_reversals`).

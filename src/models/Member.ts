@@ -7,7 +7,7 @@ import { AssociationModel } from "./Association.js";
 import { hojeIso, somarMeses } from "../utils/format.js";
 import { comAtividade } from "./ActivityLog.js";
 
-/** Situação do sócio (ver `docs/dominio-associacoes.md`, seção 2.2). */
+/** Situação do sócio (ver `.claude/docs/dominio-associacoes.md`, seção 2.2). */
 export type StatusSocio = "PENDENTE" | "ATIVO" | "INATIVO" | "SUSPENSO" | "DESLIGADO" | "FALECIDO";
 
 /** Espelha a tabela `members` (migration `version: 2`). */
@@ -130,7 +130,7 @@ export interface MemberStatusHistorico {
 
 /**
  * Dados de criação: `people` + `members` num único formulário, já que a UI
- * trata isso como uma "ficha de sócio" só (ver `docs/plano-implementacao.md`,
+ * trata isso como uma "ficha de sócio" só (ver `.claude/docs/plano-implementacao.md`,
  * Etapa 2).
  */
 export interface NovoSocio extends NovaPessoa {
@@ -458,9 +458,9 @@ export class MemberModel {
    * Registra uma mudança de situação: atualiza `members.status` (e,
    * opcionalmente, `exit_date`/`exit_reason`) e grava a transição em
    * `member_status_history` — sócio desligado não é apagado, só encerrado
-   * (ver `docs/dominio-associacoes.md`, seção 2.2). `changed_by` fica
+   * (ver `.claude/docs/dominio-associacoes.md`, seção 2.2). `changed_by` fica
    * sempre `null`: o app não tem usuários (correção pós-MVP removeu
-   * usuários/perfis/auditoria — ver docs/plano-implementacao.md).
+   * usuários/perfis/auditoria — ver .claude/docs/plano-implementacao.md).
    */
   static async changeStatus(
     id: string,

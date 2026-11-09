@@ -1,4 +1,4 @@
-// Etapa 7 do módulo de associações (ver docs/plano-implementacao.md):
+// Etapa 7 do módulo de associações (ver .claude/docs/plano-implementacao.md):
 // comandos nativos para copiar o arquivo escolhido pelo usuário (via
 // `@tauri-apps/plugin-dialog`) para uma pasta gerenciada pelo app e calcular
 // seus metadados (tamanho, tipo MIME, hash SHA-256).
@@ -12,7 +12,7 @@
 // O banco guarda só os metadados (`document_versions`); o arquivo em si vive
 // fora do SQLite, numa subpasta "docs" ao lado do arquivo `.db` da
 // associação. Desde a correção pós-MVP que voltou a "1 arquivo .db por
-// associação" (ver docs/plano-implementacao.md), não existe mais um
+// associação" (ver .claude/docs/plano-implementacao.md), não existe mais um
 // `config::load_or_init().database.path` único — cada associação tem o
 // seu, e o frontend já sabe qual é (é o mesmo caminho usado para abrir a
 // conexão SQL dela), por isso os comandos abaixo recebem `db_path` como

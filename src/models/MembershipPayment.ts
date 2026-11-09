@@ -380,7 +380,7 @@ export class MembershipPaymentModel {
 
   /**
    * Registra o pagamento da mensalidade de um sócio/mês: gera o lançamento
-   * de receita no caixa (mesmo fluxo de antes, ver `docs/dominio-associacoes.md`,
+   * de receita no caixa (mesmo fluxo de antes, ver `.claude/docs/dominio-associacoes.md`,
    * seção 2.3), numera o recibo pela sequência do livro escolhido (se
    * houver — mesma numeração atômica de `ProtocolEntryModel.create`, o
    * recibo vira um protocolo `EXPEDIDO` de verdade, rastreável no livro) e

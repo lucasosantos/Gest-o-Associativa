@@ -7,7 +7,7 @@ import { ActivityLogModel } from "../models/ActivityLog.js";
 
 /**
  * O app voltou a "1 arquivo `.db` por associação" (ver
- * docs/plano-implementacao.md, correção pós-MVP): cada entrada do
+ * .claude/docs/plano-implementacao.md, correção pós-MVP): cada entrada do
  * `config.json` (`AssociationSummary`) aponta para o seu próprio arquivo.
  * Esta composable guarda três coisas:
  * - `currentAssociationConfigId`: qual entrada do `config.json` está

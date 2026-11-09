@@ -6,7 +6,7 @@
 > desenhado e implementado no app.
 >
 > **Atenção — divergências conhecidas com o projeto atual (ver
-> [`CLAUDE.md`](../CLAUDE.md) e [`.claude/rules/database.md`](../.claude/rules/database.md)):**
+> [`CLAUDE.md`](../../CLAUDE.md) e [`.claude/rules/database.md`](../../.claude/rules/database.md)):**
 > - O SQL da seção 5 é escrito para **PostgreSQL** (tipos `UUID`,
 >   `gen_random_uuid()`, `ENUM`, `INET`, `JSONB`). O projeto usa **SQLite**
 >   via `tauri-plugin-sql`, que não tem esses tipos nativamente — a adaptação

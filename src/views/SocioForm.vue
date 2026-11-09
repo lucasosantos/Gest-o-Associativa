@@ -1,6 +1,6 @@
 <script setup lang="ts">
 // Ficha de sócio (criação/edição): reúne dados de `people` + `members` num
-// formulário só (ver docs/plano-implementacao.md, Etapa 2). Era um modal
+// formulário só (ver .claude/docs/plano-implementacao.md, Etapa 2). Era um modal
 // (`MemberForm.vue`) e virou página a pedido do usuário — sem `:id` na
 // rota, cria um sócio novo; com `:id`, carrega e edita o existente.
 import { computed, onMounted, ref } from "vue";

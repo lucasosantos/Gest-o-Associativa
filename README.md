@@ -209,7 +209,7 @@ Stack: Tauri v2 + Vue 3 (Composition API) + TypeScript + Vite no frontend,
 Rust no backend nativo, SQLite via `tauri-plugin-sql`. Contexto completo do
 projeto para quem for contribuir está em [CLAUDE.md](CLAUDE.md), nas regras
 por área em [.claude/rules/](.claude/rules/) e no histórico de decisões em
-[docs/plano-implementacao.md](docs/plano-implementacao.md).
+[.claude/docs/plano-implementacao.md](.claude/docs/plano-implementacao.md).
 
 | Comando | Ação |
 |---|---|

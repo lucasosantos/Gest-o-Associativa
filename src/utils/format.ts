@@ -1,7 +1,7 @@
 /**
  * Conversões e formatações usadas pelos módulos de domínio.
  *
- * Convenções (ver `docs/plano-implementacao.md`):
+ * Convenções (ver `.claude/docs/plano-implementacao.md`):
  * - Valores monetários são guardados como `INTEGER` em centavos no banco,
  *   para não sofrer com imprecisão de ponto flutuante em somas de parcelas
  *   e baixas. Estas funções fazem a ponte entre centavos (banco/lógica) e
@@ -138,7 +138,7 @@ export function apenasDigitos(valor: string): string {
 /**
  * Aplica a máscara de CPF (`000.000.000-00`) para exibição. Guarde o CPF
  * normalizado (só dígitos, via `apenasDigitos`) no banco — a máscara é só
- * de apresentação (ver `docs/dominio-associacoes.md`, seção 6).
+ * de apresentação (ver `.claude/docs/dominio-associacoes.md`, seção 6).
  */
 export function formatarCpf(cpf: string): string {
   const digitos = apenasDigitos(cpf);

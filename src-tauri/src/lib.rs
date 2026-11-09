@@ -20,7 +20,7 @@ fn all_migrations() -> Vec<Migration> {
     vec![Migration {
         version: 1,
         description: "cria_institucional",
-        // Etapa 1 do módulo de associações (ver docs/plano-implementacao.md):
+        // Etapa 1 do módulo de associações (ver .claude/docs/plano-implementacao.md):
         // cadastro da associação e endereços reutilizáveis. `addresses.person_id`
         // referencia `people(id)`, criada só na Etapa 2 — SQLite não valida a
         // tabela referenciada no momento do CREATE TABLE, então isso é seguro.
@@ -194,7 +194,7 @@ fn all_migrations() -> Vec<Migration> {
         // Etapa 3 do módulo de associações: contas financeiras, plano de
         // contas, centros de custo, formas de pagamento e o fluxo de caixa
         // propriamente dito. Valores monetários são `INTEGER` em centavos
-        // (ver docs/plano-implementacao.md, convenção da Etapa 0) — nunca
+        // (ver .claude/docs/plano-implementacao.md, convenção da Etapa 0) — nunca
         // `REAL`, para não sofrer com imprecisão de ponto flutuante em somas
         // de lançamentos. Saldo de conta NÃO é persistido: é sempre calculado
         // sob demanda a partir de `cash_transactions` (ver `FinancialAccountModel`),
@@ -324,7 +324,7 @@ fn all_migrations() -> Vec<Migration> {
     }, Migration {
         version: 4,
         description: "cria_contas_a_pagar_e_receber",
-        // Etapa 5 do plano (docs/plano-implementacao.md) — implementada antes
+        // Etapa 5 do plano (.claude/docs/plano-implementacao.md) — implementada antes
         // da Etapa 4 (Mensalidades) a pedido do usuário. Não há dependência
         // real entre elas: `receivables.member_id` referencia `members`
         // (Etapa 2) diretamente, sem precisar de `membership_charges`.
@@ -461,7 +461,7 @@ fn all_migrations() -> Vec<Migration> {
     }, Migration {
         version: 5,
         description: "cria_mensalidades",
-        // Etapa 4 do plano (docs/plano-implementacao.md) — implementada
+        // Etapa 4 do plano (.claude/docs/plano-implementacao.md) — implementada
         // depois da Etapa 5 (Contas a pagar/receber), a pedido do usuário.
         //
         // `membership_charges.membership_plan_id` referencia
@@ -796,7 +796,7 @@ fn all_migrations() -> Vec<Migration> {
         // migration `version: 5`), e isso não se justifica para o MVP. Essas
         // colunas passam a ser preenchidas com `getCurrentUserId()` a partir
         // de agora nos fluxos considerados sensíveis (financeiro, sócio,
-        // permissão — ver `docs/dominio-associacoes.md`, seção 6, regra de
+        // permissão — ver `.claude/docs/dominio-associacoes.md`, seção 6, regra de
         // "Auditoria"), mas continuam validadas só em código.
         //
         // `before_data`/`after_data` de `audit_logs` são `TEXT` (JSON
@@ -810,7 +810,7 @@ fn all_migrations() -> Vec<Migration> {
         //
         // LIMITAÇÃO CONHECIDA (registrada depois, quando o app passou a
         // suportar várias associações por arquivo — ver
-        // `docs/plano-implementacao.md`): `users.email` é `UNIQUE` GLOBAL,
+        // `.claude/docs/plano-implementacao.md`): `users.email` é `UNIQUE` GLOBAL,
         // não `UNIQUE(association_id, email)` — na época desta migration só
         // existia uma associação por arquivo, então não fazia diferença.
         // Corrigir isso exigiria reconstruir `users` (SQLite não altera
@@ -905,7 +905,7 @@ fn all_migrations() -> Vec<Migration> {
     }, Migration {
         version: 9,
         description: "remove_usuarios_permissoes_auditoria",
-        // Correção pós-MVP (ver docs/plano-implementacao.md): o app deixou
+        // Correção pós-MVP (ver .claude/docs/plano-implementacao.md): o app deixou
         // de ter usuários — sem usuário não há a quem atribuir um perfil
         // nem autoria de auditoria, então perfis/permissões/auditoria da
         // Etapa 8 saem junto. `DROP TABLE` em cadeia, dependentes antes das
@@ -939,7 +939,7 @@ fn all_migrations() -> Vec<Migration> {
         version: 10,
         description: "cria_parcelas_e_voto_do_plano",
         // Reestruturação do fluxo de mensalidades (ver
-        // docs/plano-implementacao.md): `parcelas` é um calendário de
+        // .claude/docs/plano-implementacao.md): `parcelas` é um calendário de
         // competências (1 linha por mês/ano, SEM sócio) — cada
         // `membership_charges` passa a apontar pra uma delas via
         // `parcela_id`, além de continuar guardando `competence_month`
@@ -1007,7 +1007,7 @@ fn all_migrations() -> Vec<Migration> {
     }, Migration {
         version: 11,
         description: "remove_planos_valor_unico_por_associacao",
-        // Simplificação pedida pelo usuário (ver docs/plano-implementacao.md):
+        // Simplificação pedida pelo usuário (ver .claude/docs/plano-implementacao.md):
         // vários planos de mensalidade viraram confusos — a associação passa
         // a ter UM valor de contribuição só (`monthly_contribution_amount`,
         // centavos) e um dia de vencimento (`monthly_contribution_due_day`),

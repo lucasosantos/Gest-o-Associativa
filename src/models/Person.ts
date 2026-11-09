@@ -45,7 +45,7 @@ export type AtualizacaoPessoa = Partial<NovaPessoa>;
 
 /**
  * CPF é guardado normalizado (só dígitos) — a máscara de exibição fica por
- * conta de `formatarCpf` na UI (ver `docs/dominio-associacoes.md`, seção 6).
+ * conta de `formatarCpf` na UI (ver `.claude/docs/dominio-associacoes.md`, seção 6).
  */
 function normalizarCpf(cpf: string | null | undefined): string | null {
   if (!cpf) return null;

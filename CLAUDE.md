@@ -4,8 +4,8 @@ App desktop (Tauri, Windows e Linux) para administrar associações
 comunitárias: sócios, mensalidades/cobranças, financeiro, documentos e
 protocolo, patrimônio e histórico de atividades. Offline, um arquivo SQLite
 por associação, várias associações por instalação (cada uma com senha
-opcional). Domínio e decisões: [docs/dominio-associacoes.md](docs/dominio-associacoes.md)
-(especificação original) e [docs/plano-implementacao.md](docs/plano-implementacao.md)
+opcional). Domínio e decisões: [.claude/docs/dominio-associacoes.md](.claude/docs/dominio-associacoes.md)
+(especificação original) e [.claude/docs/plano-implementacao.md](.claude/docs/plano-implementacao.md)
 (histórico de cada etapa/mudança — registre lá toda mudança relevante).
 
 ## Stack
@@ -38,6 +38,10 @@ Versão do app: mesmo número em `package.json`, `src-tauri/tauri.conf.json` e
 [release.yml](.github/workflows/release.yml), que gera os instaladores.
 
 ## Estrutura
+
+- [docs/index.html](docs/index.html) — página de apresentação publicada no GitHub Pages
+  (Settings → Pages → "Deploy from a branch", `main` / `/docs`; `docs/.nojekyll` desliga o Jekyll).
+  Arquivo único, sem build; não confundir com o `index.html` da raiz, que é a entrada do Vite.
 
 - [src/views/](src/views/) — uma tela por módulo: `Inicio` (seleção de associação, dashboard, backup),
   `Socios`/`SocioDetalhes`/`SocioForm`, `Planos`, `Cobrancas`, `Financeiro`, `Documentos`/`DocumentoDetalhes`,

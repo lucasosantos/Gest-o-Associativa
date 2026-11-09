@@ -6,7 +6,7 @@ import { comAtividade } from "./ActivityLog.js";
 /**
  * Espelha a tabela `records` (migration `version: 7`) — "registros
  * institucionais genéricos". É a entrada mais rasa de todo o dicionário de
- * dados original (`docs/dominio-associacoes.md`, seção 4.5): aparece só na
+ * dados original (`.claude/docs/dominio-associacoes.md`, seção 4.5): aparece só na
  * tabela-resumo, sem `CREATE TABLE` correspondente e sem relação com
  * nenhuma outra tabela. Implementado aqui com exatamente os campos
  * descritos ali, sem inventar semântica que o documento-fonte não define —

@@ -143,7 +143,7 @@ export class PayableModel {
    * Baixa (total ou parcial) de uma parcela: cria a `cash_transaction` de
    * despesa correspondente, registra em `payable_payments` e atualiza a
    * situação da parcela e da conta a pagar (ver
-   * `docs/dominio-associacoes.md`, seção 2.5 e regra de baixa da seção 6).
+   * `.claude/docs/dominio-associacoes.md`, seção 2.5 e regra de baixa da seção 6).
    */
   static async payInstallment(installmentId: string, dados: BaixaParcela): Promise<void> {
     const db = await getDatabase();

@@ -6,7 +6,7 @@
   schema é uma nova entrada com `version` incrementado (hoje a última é
   `version: 24`). Só declare `REFERENCES` para tabela que já existe — o
   `sqlx` liga `PRAGMA foreign_keys = ON` e não dá pra desligar dentro da
-  transação da migration (ver `docs/plano-implementacao.md`).
+  transação da migration (ver `.claude/docs/plano-implementacao.md`).
 - SQLite não aceita `DEFAULT CURRENT_TIMESTAMP` em `ALTER TABLE ... ADD COLUMN`.
   Para adicionar `created_at`/`updated_at` a uma tabela já existente: coluna sem
   default → `UPDATE` de backfill → um trigger `AFTER INSERT` e um `AFTER UPDATE`

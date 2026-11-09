@@ -4,7 +4,7 @@ import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js
 import { importDocumentFile } from "../services/documentFiles.js";
 import { comAtividade } from "./ActivityLog.js";
 
-/** Situação do documento (ver `docs/dominio-associacoes.md`, seção 2.7). */
+/** Situação do documento (ver `.claude/docs/dominio-associacoes.md`, seção 2.7). */
 export type StatusDocumento = "ATIVO" | "ARQUIVADO" | "CANCELADO";
 
 /** Particípio usado no histórico de atividades ("Documento arquivado — ..."). */

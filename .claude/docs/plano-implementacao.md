@@ -49,8 +49,8 @@ mínimos para operar aquele pedaço pela UI, (d) validar com
 
 ## Convenções técnicas comuns (Etapa 0 — sem tabela de domínio) ✅ concluída
 
-Implementado: [src/services/id.ts](../src/services/id.ts) (`newId()`) e
-[src/utils/format.ts](../src/utils/format.ts) (`centavosParaReais`,
+Implementado: [src/services/id.ts](../../src/services/id.ts) (`newId()`) e
+[src/utils/format.ts](../../src/utils/format.ts) (`centavosParaReais`,
 `reaisParaCentavos`, `formatarMoeda`, `formatarData`, `formatarCompetencia`,
 `hojeIso`). `npm run type-check` validado sem erros. Sem tabela/migration
 nesta etapa, como previsto.
@@ -90,11 +90,11 @@ nesta etapa, como previsto.
 ## Etapa 1 — Institucional ✅ concluída
 
 Implementado: migration `version: 1` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`associations` + `addresses`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`associations` + `addresses`,
 com trigger de `updated_at`), models
-[src/models/Association.ts](../src/models/Association.ts) e
-[src/models/Address.ts](../src/models/Address.ts), e a tela
-[src/views/Instituicional.vue](../src/views/Instituicional.vue) em
+[src/models/Association.ts](../../src/models/Association.ts) e
+[src/models/Address.ts](../../src/models/Address.ts), e a tela
+[src/views/Instituicional.vue](../../src/views/Instituicional.vue) em
 `/instituicional` (aba "Instituição"). Validado: `npm run type-check`,
 `cargo check` e o SQL da migration reproduzido num banco SQLite in-memory
 (inserts, trigger de `updated_at` e ambos os `CHECK` testados manualmente).
@@ -114,16 +114,16 @@ ao menos um). Sem tabela de contato institucional — `email`/`phone`/
 ## Etapa 2 — Sócios ✅ concluída
 
 Implementado: migration `version: 2` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`people`, `person_contacts`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`people`, `person_contacts`,
 `members`, `member_dependents`, `member_representatives`,
 `member_status_history`); models
-[Person.ts](../src/models/Person.ts) (com `findByCpf`),
-[PersonContact.ts](../src/models/PersonContact.ts),
-[Member.ts](../src/models/Member.ts) (com `search`, `changeStatus`,
-`statusHistory`), [MemberDependent.ts](../src/models/MemberDependent.ts) e
-[MemberRepresentative.ts](../src/models/MemberRepresentative.ts); telas
-[Socios.vue](../src/views/Socios.vue) (lista + busca) e
-[SocioDetalhes.vue](../src/views/SocioDetalhes.vue) (ficha com abas: dados,
+[Person.ts](../../src/models/Person.ts) (com `findByCpf`),
+[PersonContact.ts](../../src/models/PersonContact.ts),
+[Member.ts](../../src/models/Member.ts) (com `search`, `changeStatus`,
+`statusHistory`), [MemberDependent.ts](../../src/models/MemberDependent.ts) e
+[MemberRepresentative.ts](../../src/models/MemberRepresentative.ts); telas
+[Socios.vue](../../src/views/Socios.vue) (lista + busca) e
+[SocioDetalhes.vue](../../src/views/SocioDetalhes.vue) (ficha com abas: dados,
 contatos, dependentes, representantes, histórico); modais
 `MemberForm.vue`, `MemberStatusChangeForm.vue`, `MemberDependentForm.vue`,
 `MemberRepresentativeForm.vue` e `PersonContactForm.vue` (este último não
@@ -154,17 +154,17 @@ dependentes, representantes, histórico). Modais `MemberForm.vue`,
 ## Etapa 3 — Financeiro / Fluxo de caixa ✅ concluída
 
 Implementado: migration `version: 3` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`financial_accounts`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`financial_accounts`,
 `financial_categories`, `cost_centers`, `payment_methods`, `payees`,
 `payers`, `cash_transactions`, `cash_transaction_reversals`); models
-[FinancialAccount.ts](../src/models/FinancialAccount.ts) (saldo calculado
+[FinancialAccount.ts](../../src/models/FinancialAccount.ts) (saldo calculado
 sob demanda via `opening_balance` + soma assinada dos lançamentos, com
 `ESTORNO` resolvido por `JOIN` em `cash_transaction_reversals`),
-[FinancialCategory.ts](../src/models/FinancialCategory.ts),
-[CostCenter.ts](../src/models/CostCenter.ts),
-[PaymentMethod.ts](../src/models/PaymentMethod.ts) e
-[CashTransaction.ts](../src/models/CashTransaction.ts) (`create`,
-`transfer`, `reverse`); tela [Financeiro.vue](../src/views/Financeiro.vue)
+[FinancialCategory.ts](../../src/models/FinancialCategory.ts),
+[CostCenter.ts](../../src/models/CostCenter.ts),
+[PaymentMethod.ts](../../src/models/PaymentMethod.ts) e
+[CashTransaction.ts](../../src/models/CashTransaction.ts) (`create`,
+`transfer`, `reverse`); tela [Financeiro.vue](../../src/views/Financeiro.vue)
 em `/financeiro` com sub-navegação por abas (Contas, Lançamentos,
 Categorias, Centros de custo, Formas de pagamento — esta última não estava
 no plano original, adicionada porque `CashTransactionForm` precisa de
@@ -208,16 +208,16 @@ Implementada por último (depois da Etapa 5), a pedido do usuário — ver
 nota de progresso no topo deste arquivo.
 
 Implementado: migration `version: 5` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`membership_plans`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`membership_plans`,
 `member_plan_history`, `membership_charges`, `charge_adjustments`,
 `charge_payments`, `member_exemptions`); models
-[MembershipPlan.ts](../src/models/MembershipPlan.ts),
-[MembershipCharge.ts](../src/models/MembershipCharge.ts) (`generateForCompetence`
+[MembershipPlan.ts](../../src/models/MembershipPlan.ts),
+[MembershipCharge.ts](../../src/models/MembershipCharge.ts) (`generateForCompetence`
 em lote, idempotente, com `due_date` ajustado para o último dia do mês
 quando o dia do plano não existir nele) e
-[ChargePayment.ts](../src/models/ChargePayment.ts) (baixa gera
+[ChargePayment.ts](../../src/models/ChargePayment.ts) (baixa gera
 `CashTransaction` da Etapa 3, bloqueia baixa de cobrança já paga/cancelada/
-isenta); tela [Mensalidades.vue](../src/views/Mensalidades.vue) em
+isenta); tela [Mensalidades.vue](../../src/views/Mensalidades.vue) em
 `/mensalidades`, com abas Cobranças (filtro por competência/situação) e
 Planos; modais `MembershipPlanForm.vue`, `ChargeGenerateForm.vue`,
 `ChargePaymentForm.vue`.
@@ -260,19 +260,19 @@ Implementada fora de ordem (antes da Etapa 4), a pedido do usuário — ver
 nota de progresso no topo deste arquivo.
 
 Implementado: migration `version: 4` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`payables`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`payables`,
 `payable_installments`, `payable_payments`, `receivables`,
 `receivable_installments`, `receivable_payments`, `donors`, `donations` —
 `payees`/`payers` já existiam desde a migration `version: 3`, só ganharam
 model agora); models
-[Payee.ts](../src/models/Payee.ts), [Payer.ts](../src/models/Payer.ts),
-[Payable.ts](../src/models/Payable.ts) (parcelas geradas por
-[utils/installments.ts](../src/utils/installments.ts), `payInstallment` +
-`refreshStatus`), [Receivable.ts](../src/models/Receivable.ts) (espelha
-`Payable.ts`, em receita), [Donor.ts](../src/models/Donor.ts) e
-[Donation.ts](../src/models/Donation.ts); telas
-[ContasAPagar.vue](../src/views/ContasAPagar.vue) e
-[ContasAReceber.vue](../src/views/ContasAReceber.vue) (esta com abas "A
+[Payee.ts](../../src/models/Payee.ts), [Payer.ts](../../src/models/Payer.ts),
+[Payable.ts](../../src/models/Payable.ts) (parcelas geradas por
+[utils/installments.ts](../../src/utils/installments.ts), `payInstallment` +
+`refreshStatus`), [Receivable.ts](../../src/models/Receivable.ts) (espelha
+`Payable.ts`, em receita), [Donor.ts](../../src/models/Donor.ts) e
+[Donation.ts](../../src/models/Donation.ts); telas
+[ContasAPagar.vue](../../src/views/ContasAPagar.vue) e
+[ContasAReceber.vue](../../src/views/ContasAReceber.vue) (esta com abas "A
 receber"/"Doações") em `/contas-a-pagar` e `/contas-a-receber`; modais
 `PayableForm.vue`, `PayableInstallmentPaymentForm.vue`, `ReceivableForm.vue`,
 `ReceivableInstallmentPaymentForm.vue`, `DonationForm.vue`, e mais
@@ -311,13 +311,13 @@ fato (depende da Etapa 8).
 ## Etapa 6 — Protocolos ✅ concluída
 
 Implementado: migration `version: 6` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`protocol_books`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`protocol_books`,
 `protocol_entries`); models
-[ProtocolBook.ts](../src/models/ProtocolBook.ts) e
-[ProtocolEntry.ts](../src/models/ProtocolEntry.ts) (`create()` faz a
+[ProtocolBook.ts](../../src/models/ProtocolBook.ts) e
+[ProtocolEntry.ts](../../src/models/ProtocolEntry.ts) (`create()` faz a
 numeração atômica via `UPDATE ... RETURNING` + `INSERT`, `updateStatus()`
 nunca apaga um registro lançado); tela
-[Protocolos.vue](../src/views/Protocolos.vue) em `/protocolos`, com abas
+[Protocolos.vue](../../src/views/Protocolos.vue) em `/protocolos`, com abas
 Protocolos (filtro por livro/situação, troca de situação inline) e Livros;
 modais `ProtocolEntryForm.vue`, `ProtocolBookForm.vue`.
 
@@ -386,31 +386,31 @@ cobre `open_url`/`reveal_item_in_dir`, não `open_path` — então
 default.json`.
 
 Implementado: migration `version: 7` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`document_types`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`document_types`,
 `documents`, `document_versions`, `document_links`, `document_tags`,
 `document_tag_links`, `document_access_logs`, `records`); módulo
-[documents.rs](../src-tauri/src/documents.rs) com os dois comandos Rust
+[documents.rs](../../src-tauri/src/documents.rs) com os dois comandos Rust
 citados acima; models
-[DocumentType.ts](../src/models/DocumentType.ts),
-[Document.ts](../src/models/Document.ts) (`create()` já importa o arquivo
+[DocumentType.ts](../../src/models/DocumentType.ts),
+[Document.ts](../../src/models/Document.ts) (`create()` já importa o arquivo
 escolhido como versão 1; `addVersion()` importa uma nova versão e atualiza
 `current_version_id`; `logAccess()` grava em `document_access_logs`),
-[DocumentLink.ts](../src/models/DocumentLink.ts) (lista fechada
+[DocumentLink.ts](../../src/models/DocumentLink.ts) (lista fechada
 `TIPOS_ENTIDADE_VINCULAVEL` validada em código — mesmo espírito de
 `source_type`/`source_id` — com seletor dedicado só para `MEMBER` e
 `PROTOCOL_ENTRY`, que já têm tela; os demais tipos aceitam colar o `id`
-manualmente), [DocumentTag.ts](../src/models/DocumentTag.ts) e
-[InstitutionalRecord.ts](../src/models/InstitutionalRecord.ts) (nome
+manualmente), [DocumentTag.ts](../../src/models/DocumentTag.ts) e
+[InstitutionalRecord.ts](../../src/models/InstitutionalRecord.ts) (nome
 diferente de `records` para não colidir com o tipo utilitário `Record<K,
 V>` do TypeScript); serviço
-[documentFiles.ts](../src/services/documentFiles.ts) fazendo a ponte com
+[documentFiles.ts](../../src/services/documentFiles.ts) fazendo a ponte com
 os comandos Rust; telas
-[Documentos.vue](../src/views/Documentos.vue) em `/documentos`
+[Documentos.vue](../../src/views/Documentos.vue) em `/documentos`
 (sub-navegação por abas: Documentos, Tipos, Etiquetas, Registros — as três
 últimas não estavam na lista original de telas, adicionadas pelo mesmo
 motivo de outras etapas: as entidades administrativas do módulo precisam
 de alguma UI para existir) e
-[DocumentoDetalhes.vue](../src/views/DocumentoDetalhes.vue) em
+[DocumentoDetalhes.vue](../../src/views/DocumentoDetalhes.vue) em
 `/documentos/:id` (`meta.hidden: true`, abas Versões/Vínculos/Etiquetas —
 padrão de tela de detalhe já usado em `SocioDetalhes.vue`); modais
 `DocumentUploadForm.vue`, `DocumentVersionForm.vue`,
@@ -480,7 +480,7 @@ dicionário de dados original (sem uso sem um fluxo de autenticação de
 verdade).
 
 Implementado: migration `version: 8` em
-[src-tauri/src/lib.rs](../src-tauri/src/lib.rs) (`users`, `roles`,
+[src-tauri/src/lib.rs](../../src-tauri/src/lib.rs) (`users`, `roles`,
 `permissions`, `role_permissions`, `user_roles`, `audit_logs`,
 `notifications`, `system_settings`; `user_association_access` ficou de
 fora, como já previsto — só faria sentido no modelo N-associações-por-
@@ -497,18 +497,18 @@ nesta etapa (ver abaixo). `document_access_logs.ip_address`/`user_agent`
 do dicionário original não entraram, mesma razão já registrada na Etapa 7
 (app desktop local).
 
-Models: [Permission.ts](../src/models/Permission.ts) (catálogo GLOBAL, sem
+Models: [Permission.ts](../../src/models/Permission.ts) (catálogo GLOBAL, sem
 `association_id` — igual ao dicionário original —, com `ensureCatalog()`
 semeando os códigos de exemplo da seção 7 do documento de domínio),
-[Role.ts](../src/models/Role.ts) (`seedDefaultRoles()` cria os 7 perfis
+[Role.ts](../../src/models/Role.ts) (`seedDefaultRoles()` cria os 7 perfis
 sugeridos na seção 7 — Administrador, Presidência, Tesouraria, Secretaria,
 Atendimento, Consulta, Auditoria — sem nenhuma permissão pré-marcada, já
 que o documento só descreve o escopo de cada perfil em prosa;
 `setPermissions()` substitui o conjunto inteiro e audita a alteração),
-[User.ts](../src/models/User.ts) (sem exclusão física — nem seria possível
+[User.ts](../../src/models/User.ts) (sem exclusão física — nem seria possível
 depois da primeira ação auditada, `audit_logs.user_id` bloqueia o
 `DELETE`, confirmado na simulação —, só `setActive()`), e
-[AuditLog.ts](../src/models/AuditLog.ts) (`log()` grava com o autor de
+[AuditLog.ts](../../src/models/AuditLog.ts) (`log()` grava com o autor de
 `getCurrentUserId()`, podendo ser `null` se ninguém foi selecionado —
 preferiu-se auditar sem autor a não auditar). `Notification.ts` e
 `SystemSetting.ts` entraram só como camada de dados, sem tela: o próprio
@@ -533,13 +533,13 @@ Isso significa que as colunas de autoria das Etapas 4, 5, 6 e 7
 como trabalho futuro fora do escopo que o plano definiu para esta etapa,
 não uma omissão silenciosa.
 
-Telas: [Usuarios.vue](../src/views/Usuarios.vue) em `/usuarios` (abas
+Telas: [Usuarios.vue](../../src/views/Usuarios.vue) em `/usuarios` (abas
 Usuários — cadastro, ativar/desativar, gerenciar perfis por usuário via
-[UserRolesForm.vue](../src/modals/UserRolesForm.vue) — e Auditoria, uma
+[UserRolesForm.vue](../../src/modals/UserRolesForm.vue) — e Auditoria, uma
 tela de consulta que não estava na lista original de telas, adicionada
 para poder de fato verificar que a trilha de auditoria funciona) e
-[Perfis.vue](../src/views/Perfis.vue) em `/perfis` (lista de perfis +
-"Criar perfis sugeridos" + [RolePermissionsForm.vue](../src/modals/RolePermissionsForm.vue),
+[Perfis.vue](../../src/views/Perfis.vue) em `/perfis` (lista de perfis +
+"Criar perfis sugeridos" + [RolePermissionsForm.vue](../../src/modals/RolePermissionsForm.vue),
 checklist de permissões agrupada por módulo).
 
 Validado: `npm run type-check` (com rebuild limpo `--force`), `cargo
@@ -590,7 +590,7 @@ associação ativa.
 - **`AssociationModel`** perdeu `getCurrent()`/`getCurrentId()` (que liam
   "a única linha existente") e ganhou `list()`/`get(id)` — CRUD comum,
   sem noção de "atual".
-- **Nova composable [useCurrentAssociation.ts](../src/composables/useCurrentAssociation.ts)**
+- **Nova composable [useCurrentAssociation.ts](../../src/composables/useCurrentAssociation.ts)**
   (mesmo padrão de `useCurrentUser.ts`, Etapa 8): guarda qual associação
   está ativa, persistida em `localStorage` (não no banco — é preferência
   local, não dado de domínio). `getCurrentAssociationId()` lança erro se
@@ -618,13 +618,13 @@ associação ativa.
   `SystemSettingModel.get(key)` idem, apesar de a `UNIQUE` já ser
   `(association_id, key)`. Os dois agora filtram corretamente.
 - **`Instituicional.vue` removido** (rota `/instituicional` também) — seu
-  conteúdo virou [InstitutionalDataEditor.vue](../src/components/InstitutionalDataEditor.vue),
+  conteúdo virou [InstitutionalDataEditor.vue](../../src/components/InstitutionalDataEditor.vue),
   um componente que recebe `associationId` por prop (sempre edita uma
   associação existente e específica, nunca mais "a única que existe"),
   reaproveitado dentro da tela Início.
-- **[Inicio.vue](../src/views/Inicio.vue) reescrita**: dropdown de
+- **[Inicio.vue](../../src/views/Inicio.vue) reescrita**: dropdown de
   associação ativa + botão "Nova associação" (abre
-  [AssociationForm.vue](../src/modals/AssociationForm.vue), modal mínimo
+  [AssociationForm.vue](../../src/modals/AssociationForm.vue), modal mínimo
   — só razão social/nome fantasia/CNPJ; endereço e o resto se completam
   depois na aba Instituição) no topo; abaixo, duas abas — "Dashboard"
   (cards com sócios ativos, saldo total de caixa, mensalidades em
@@ -667,13 +667,13 @@ superior. Só reorganização de UI, nenhuma migration nem model mudou:
 
 - **Contas a pagar** e **Contas a receber** (rotas `/contas-a-pagar` e
   `/contas-a-receber`, removidas) viraram as abas "A pagar" e "A receber"
-  de [Financeiro.vue](../src/views/Financeiro.vue). "A receber" preserva a
+  de [Financeiro.vue](../../src/views/Financeiro.vue). "A receber" preserva a
   sub-aba "Doações" que já tinha.
 - **Protocolos** (rota `/protocolos`, removida) virou a aba "Protocolos"
-  de [Documentos.vue](../src/views/Documentos.vue), com sua sub-aba
+  de [Documentos.vue](../../src/views/Documentos.vue), com sua sub-aba
   "Livros" preservada.
 - **Mensalidades** (rota `/mensalidades`, removida) virou a aba
-  "Mensalidades" de [Socios.vue](../src/views/Socios.vue), com sua
+  "Mensalidades" de [Socios.vue](../../src/views/Socios.vue), com sua
   sub-aba "Planos" preservada.
 
 Cada tela absorvente ganhou o estado, as funções e os modais da tela
@@ -1280,18 +1280,18 @@ baixa). Fluxo decidido: situação, local, responsável e conservação **não
 se editam direto** — mudam só por evento (movimentação, envio/retorno de
 manutenção, empréstimo/devolução, conservação, ocorrência, baixa, baixa
 desfeita), cada um permitido só a partir de certas situações
-(`EVENTOS_PERMITIDOS` em [Asset.ts](../src/models/Asset.ts)). Baixa exige
+(`EVENTOS_PERMITIDOS` em [Asset.ts](../../src/models/Asset.ts)). Baixa exige
 motivo; baixa por engano se desfaz com justificativa (evento `REATIVACAO`,
 a baixa continua visível). Compra, custo de manutenção e venda podem gerar
 o lançamento no caixa na hora (`source_type = 'ASSET'`,
 `asset_events.cash_transaction_id`). Exclusão física só pra cadastro feito
 por engano, bloqueada se algum evento gerou lançamento. Documentos (nota
 fiscal, termo de doação, laudo) se vinculam pelo `document_links` já
-existente (`ASSET`). Telas: [Patrimonio.vue](../src/views/Patrimonio.vue)
-(`/patrimonio`) e [PatrimonioDetalhes.vue](../src/views/PatrimonioDetalhes.vue);
+existente (`ASSET`). Telas: [Patrimonio.vue](../../src/views/Patrimonio.vue)
+(`/patrimonio`) e [PatrimonioDetalhes.vue](../../src/views/PatrimonioDetalhes.vue);
 modais `AssetForm`, `AssetEventForm`, `AssetDisposalForm`,
 `AssetReactivateForm` e o componente `CashEntryOption`. Relatório
-"Balanço de patrimônio" ([ImprimirBalancoPatrimonio.vue](../src/views/ImprimirBalancoPatrimonio.vue),
+"Balanço de patrimônio" ([ImprimirBalancoPatrimonio.vue](../../src/views/ImprimirBalancoPatrimonio.vue),
 rota `/patrimonio/balanco/imprimir`, botão na sidebar de Patrimônio): bens
 em posse agrupados por categoria com subtotal e total do valor de
 aquisição, seção opcional de bens baixados e linhas de assinatura.
@@ -1300,7 +1300,7 @@ aquisição, seção opcional de bens baixados e linhas de assinatura.
 legível, `entity_type`/`entity_id` opcionais, `created_at` UTC com
 milissegundos). Imutável: triggers abortam `UPDATE`/`DELETE`. Sem usuário
 (o app não tem desde a `version: 9`). Gravado pelos models via
-`comAtividade(acao, descrever)` ([ActivityLog.ts](../src/models/ActivityLog.ts)):
+`comAtividade(acao, descrever)` ([ActivityLog.ts](../../src/models/ActivityLog.ts)):
 só a chamada **mais externa** registra, então uma ação composta (ex.:
 pagamento de mensalidade = lançamento de caixa + protocolo do recibo +
 pagamento) vira UMA linha. Falha ao gravar o histórico nunca desfaz nem
@@ -1315,7 +1315,7 @@ situação, fechamento automático de ano), patrimônio, instituição, abertura
 da associação, backup exportado e troca/remoção de senha. **Fora**:
 visualização de documento (continua só em `document_access_logs`),
 importação de backup (o banco é substituído) e mudança de local do arquivo
-(o banco é fechado antes). Tela [Atividades.vue](../src/views/Atividades.vue)
+(o banco é fechado antes). Tela [Atividades.vue](../../src/views/Atividades.vue)
 (`/atividades`), paginada **por dia** (todas as atividades do dia em ordem
 cronológica; "Dia anterior"/"Próximo dia" pulam direto pro dia mais
 próximo com atividade — `ActivityLogModel.diaVizinho` —, abrindo em hoje
@@ -1336,7 +1336,7 @@ bloqueando alteração/exclusão do histórico, filtro por data local).
 ## Mudança pós-MVP — papel de impressão configurável e revisão das impressões ✅ concluída (2026-09-24)
 
 **Configuração:** `AppConfig.print` (`PrintConfig { default_paper, receipt_paper }`)
-em [config.rs](../src-tauri/src/config.rs), com `#[serde(default)]` — um
+em [config.rs](../../src-tauri/src/config.rs), com `#[serde(default)]` — um
 `config.json` antigo continua sendo lido como formato atual (A4 nos dois).
 É preferência da instalação (impressora/papel da máquina), não da
 associação, por isso fica no `config.json` e não no banco. Comandos
@@ -1351,9 +1351,9 @@ bobina já na tela (área útil 48/72 mm, letra 8/9,5 pt, rótulos acima dos
 valores — CSS global em `App.vue`) e `imprimir()` mede a altura dele pra
 criar uma página do tamanho exato (sem puxar papel em branco). Validado em
 PDF: 58 × 106 mm e 80 × 116 mm, uma página cada, nada fora da largura. Tela: seção "Impressão" em
-[Configuracoes.vue](../src/views/Configuracoes.vue).
+[Configuracoes.vue](../../src/views/Configuracoes.vue).
 
-**Aplicação:** [usePaginaImpressao.ts](../src/composables/usePaginaImpressao.ts)
+**Aplicação:** [usePaginaImpressao.ts](../../src/composables/usePaginaImpressao.ts)
 injeta `@page { size; margin }` no `<head>` enquanto a tela de impressão
 está montada (`@page` não funciona em `<style scoped>`) e devolve
 `imprimir()`, que espera o papel estar aplicado antes do `window.print()`.
@@ -1377,21 +1377,21 @@ arquivo sem espaços) e recibo inteiro numa folha A5.
 
 ## Mudança pós-MVP — lista de sócios impressa ✅ concluída (2026-09-25)
 
-Botão "Imprimir lista" na sidebar de [Socios.vue](../src/views/Socios.vue)
-→ modal [ListaSociosPrintForm.vue](../src/modals/ListaSociosPrintForm.vue)
+Botão "Imprimir lista" na sidebar de [Socios.vue](../../src/views/Socios.vue)
+→ modal [ListaSociosPrintForm.vue](../../src/modals/ListaSociosPrintForm.vue)
 (situação — padrão "Ativo", ou todas — e ordem por nome/matrícula) →
-[ImprimirListaSocios.vue](../src/views/ImprimirListaSocios.vue)
+[ImprimirListaSocios.vue](../../src/views/ImprimirListaSocios.vue)
 (`/socios/lista/imprimir?situacao=&ordem=`, filtros também trocáveis na
 barra de ações). Cada sócio ocupa duas linhas (um `<tbody>` por sócio, que
 não se parte entre folhas): matrícula e nome; data de associação, CPF, RG
 e nascimento, cada campo com rótulo. Dados via
 `MemberModel.listarParaImpressao` (sem a foto). Rótulos de situação
-centralizados em [situacaoSocio.ts](../src/utils/situacaoSocio.ts).
+centralizados em [situacaoSocio.ts](../../src/utils/situacaoSocio.ts).
 Validado em PDF A4 (Chrome headless, CSS real): ~11 sócios por folha.
 
 ## Mudança pós-MVP — importação de CSV tolerante a colunas ausentes ✅ concluída (2026-09-25)
 
-[memberCsv.ts](../src/services/memberCsv.ts): as colunas passam a ser
+[memberCsv.ts](../../src/services/memberCsv.ts): as colunas passam a ser
 lidas **pelo nome do cabeçalho** (`mapearCabecalho`, com apelidos como
 `nome`, `nascimento`, `celular`, `e-mail`, `estado`), não pela posição —
 qualquer ordem, qualquer subconjunto; cabeçalho desconhecido é ignorado
@@ -1412,8 +1412,8 @@ essencial em branco).
 ## Mudança pós-MVP — relatório financeiro do sócio ✅ concluída (2026-09-25)
 
 Botão "Gerar relatório financeiro" na ficha do sócio
-([SocioDetalhes.vue](../src/views/SocioDetalhes.vue)) → página de
-**consulta** [RelatorioFinanceiroSocio.vue](../src/views/RelatorioFinanceiroSocio.vue)
+([SocioDetalhes.vue](../../src/views/SocioDetalhes.vue)) → página de
+**consulta** [RelatorioFinanceiroSocio.vue](../../src/views/RelatorioFinanceiroSocio.vue)
 (`/socios/:id/relatorio-financeiro?inicio=&fim=`; sem query, da data de
 associação até hoje; período ajustável na própria página). Imprimir é
 opcional, pelo botão da página — primeira versão abria imprimindo, como as
@@ -1431,14 +1431,14 @@ meses (Chrome headless, CSS real).
 
 ## Mudança pós-MVP — aba Dados completa e ficha do sócio impressa ✅ concluída (2026-09-25)
 
-A aba Dados de [SocioDetalhes.vue](../src/views/SocioDetalhes.vue) passou a
+A aba Dados de [SocioDetalhes.vue](../../src/views/SocioDetalhes.vue) passou a
 mostrar TODOS os campos de `people` + `members` (inclusive vazios, com
 "—"), em três seções: dados pessoais, vínculo com a associação e registro
 (cadastrado em / última alteração). Botão "Imprimir ficha" na sidebar →
-[ImprimirFichaSocio.vue](../src/views/ImprimirFichaSocio.vue)
+[ImprimirFichaSocio.vue](../../src/views/ImprimirFichaSocio.vue)
 (`/socios/:id/ficha/imprimir`, abre imprimindo): cabeçalho da associação,
 foto 3×4 (ou quadro vazio), os mesmos campos em duas colunas. Aba e ficha
-usam a mesma fonte, [fichaSocio.ts](../src/utils/fichaSocio.ts)
+usam a mesma fonte, [fichaSocio.ts](../../src/utils/fichaSocio.ts)
 (`montarFichaSocio`) — campo novo entra lá e aparece nas duas. Contatos,
 dependentes, representantes e endereço (tabelas próprias) ficam de fora.
 Versão compacta (a pedido): foto 21×28 mm, letra ~0,76rem, margem de
@@ -1452,7 +1452,7 @@ e observações longas, foto e cabeçalho completo —: uma folha, sobrando
 
 Carteirinha **frente e verso** no tamanho de cartão de crédito (ISO/IEC
 7810 ID-1, 85,6 × 54 mm), desenhada em
-[CarteirinhaSocio.vue](../src/components/CarteirinhaSocio.vue) (`lado`):
+[CarteirinhaSocio.vue](../../src/components/CarteirinhaSocio.vue) (`lado`):
 - **Frente:** faixa com nome da associação (fantasia, com a razão social
   embaixo quando difere), CNPJ e o título "Carteira de Associado"; foto
   3×4 (ou quadro vazio), nome (até 2 linhas), matrícula, associado desde,
@@ -1476,13 +1476,13 @@ Carteirinha **frente e verso** no tamanho de cartão de crédito (ISO/IEC
 - Sem "categoria"/plano (retirado a pedido). Sem migration nova.
 
 - **Em lote:** botão "Carteirinhas" na sidebar de Sócios →
-  [CarteirinhaPrintForm.vue](../src/modals/CarteirinhaPrintForm.vue): todos
+  [CarteirinhaPrintForm.vue](../../src/modals/CarteirinhaPrintForm.vue): todos
   de uma situação **ou** sócios marcados um a um (lista com busca por
   nome/matrícula/CPF e "Marcar todos/encontrados"), a ordem e a validade
   (data, padrão hoje + 12 meses; desmarcada, o campo some).
 - **Uma só:** "Gerar carteirinha" na sidebar da ficha do sócio → o mesmo
   modal, que nesse caso só pergunta a validade.
-- Tela [ImprimirCarteirinhas.vue](../src/views/ImprimirCarteirinhas.vue)
+- Tela [ImprimirCarteirinhas.vue](../../src/views/ImprimirCarteirinhas.vue)
   (`/socios/carteirinhas/imprimir?ids=|situacao=&ordem=&validade=`, abre
   imprimindo), dados de `MemberModel.listarParaCarteirinha`. **Frente e
   verso lado a lado** (a pedido, como no modelo em papel da associação):
@@ -1499,7 +1499,7 @@ Carteirinha **frente e verso** no tamanho de cartão de crédito (ISO/IEC
   lado a lado virou o padrão.
 - **Cantos retos (90°)** no cartão, na foto e nas caixas de dados, a pedido.
 - **Aparência personalizável, por associação**
-  ([CarteirinhaLayout.ts](../src/models/CarteirinhaLayout.ts), em
+  ([CarteirinhaLayout.ts](../../src/models/CarteirinhaLayout.ts), em
   `system_settings`, chave `carteirinha.layout`; vai junto no backup):
   logo do verso (o app não tinha campo de logo da associação; ficou aqui);
   assinatura do presidente em PNG (o seletor só aceita `.png`); frase do
