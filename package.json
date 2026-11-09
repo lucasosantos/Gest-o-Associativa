@@ -8,7 +8,10 @@
     "build": "vue-tsc -b && vite build",
     "type-check": "vue-tsc -b",
     "preview": "vite preview",
-    "tauri": "tauri"
+    "tauri": "tauri",
+    "compilar": "bash scripts/compilar.sh todos",
+    "compilar:linux": "bash scripts/compilar.sh linux",
+    "compilar:windows": "bash scripts/compilar.sh windows"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",

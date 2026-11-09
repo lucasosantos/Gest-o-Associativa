@@ -74,6 +74,16 @@ export const routes: RouteRecordRaw[] = [
     meta: { hidden: true },
   },
   {
+    path: "/socios/carteirinhas/imprimir",
+    name: "carteirinhas-imprimir",
+    component: () => import("../views/ImprimirCarteirinhas.vue"),
+    // Sem meta.label: só alcançável pelo botão "Carteirinhas" da sidebar de
+    // Sócios (em lote, `CarteirinhaPrintForm.vue`) ou "Gerar carteirinha" da
+    // ficha do sócio (uma só). Query: `?ids=a,b` OU `?situacao=`, mais
+    // `ordem` e `validade` (AAAA-MM-DD; ausente = sem validade).
+    meta: { hidden: true },
+  },
+  {
     path: "/socios/aptos-a-votar/imprimir",
     name: "aptos-a-votar-imprimir",
     component: () => import("../views/ImprimirAptosAVotar.vue"),

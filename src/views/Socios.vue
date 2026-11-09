@@ -12,6 +12,7 @@ import { gerarCsvSocios } from "../services/memberCsv.js";
 import { writeTextFile } from "../services/files.js";
 import SocioImportForm from "../modals/SocioImportForm.vue";
 import ListaSociosPrintForm from "../modals/ListaSociosPrintForm.vue";
+import CarteirinhaPrintForm from "../modals/CarteirinhaPrintForm.vue";
 
 const router = useRouter();
 
@@ -57,6 +58,11 @@ function abrirAptosAVotar() {
 /** Escolhe situação/ordem e abre a lista de sócios pra impressão (`ImprimirListaSocios.vue`). */
 function abrirImprimirLista() {
   openModal({ title: "Imprimir lista de sócios", component: ListaSociosPrintForm });
+}
+
+/** Carteirinhas em lote: por situação ou sócios marcados um a um (`ImprimirCarteirinhas.vue`). */
+function abrirCarteirinhas() {
+  openModal({ title: "Gerar carteirinhas", component: CarteirinhaPrintForm });
 }
 
 function abrirImportacao() {
@@ -159,6 +165,7 @@ onMounted(() => {
       items: [
         { id: "novo-socio", label: "Novo sócio", icon: "plus", onClick: abrirNovoSocio },
         { id: "imprimir-lista", label: "Imprimir lista", icon: "list", onClick: abrirImprimirLista },
+        { id: "carteirinhas", label: "Carteirinhas", icon: "card", onClick: abrirCarteirinhas },
         { id: "aptos-a-votar", label: "Aptos a votar", icon: "file", onClick: abrirAptosAVotar },
         { id: "importar-csv", label: "Importar CSV", icon: "upload", onClick: abrirImportacao },
         { id: "exportar-csv", label: "Exportar CSV", icon: "download", onClick: exportarCsv },

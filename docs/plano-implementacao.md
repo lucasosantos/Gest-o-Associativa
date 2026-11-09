@@ -1448,6 +1448,79 @@ headless, CSS real) no pior caso — todos os campos preenchidos, anotações
 e observações longas, foto e cabeçalho completo —: uma folha, sobrando
 ~1/6 da página.
 
+## Mudança pós-MVP — carteirinha do sócio ✅ concluída (2026-11-09)
+
+Carteirinha **frente e verso** no tamanho de cartão de crédito (ISO/IEC
+7810 ID-1, 85,6 × 54 mm), desenhada em
+[CarteirinhaSocio.vue](../src/components/CarteirinhaSocio.vue) (`lado`):
+- **Frente:** faixa com nome da associação (fantasia, com a razão social
+  embaixo quando difere), CNPJ e o título "Carteira de Associado"; foto
+  3×4 (ou quadro vazio), nome (até 2 linhas), matrícula, associado desde,
+  CPF, RG, nascimento e validade, que **some** quando o modal foi gerado
+  sem validade.
+- **Verso:** a logo da associação, centralizada e inteira
+  (`object-fit: contain`), sobre fundo branco (sem logo cadastrada, sai o
+  nome da associação na cor principal), e embaixo a linha "Assinatura do
+  presidente". Opcionalmente com a **assinatura em PNG** (de preferência
+  com fundo transparente) impressa sobre a linha, numa área de altura fixa
+  (9 mm), então a linha não muda de lugar com ou sem imagem. Sem o PNG, a
+  linha fica em branco para assinar à caneta. É só a imagem da assinatura,
+  não uma assinatura digital certificada. Abaixo da assinatura vêm:
+  **"Emitida em DD/MM/AAAA"** (o dia da geração, sempre presente); uma
+  **frase configurável** (padrão "Documento pessoal e intransferível. Em
+  caso de perda, devolva à associação.", até 140 caracteres, cortada em 2
+  linhas; em branco = sem frase); e um **rodapé com endereço principal e
+  contato** (telefone · e-mail · site) da associação, que pode ser
+  desligado e some sozinho se a associação não tiver nenhum dos dois. A
+  logo ocupa o espaço que sobrar (`flex: 1`, `object-fit: contain`).
+- Sem "categoria"/plano (retirado a pedido). Sem migration nova.
+
+- **Em lote:** botão "Carteirinhas" na sidebar de Sócios →
+  [CarteirinhaPrintForm.vue](../src/modals/CarteirinhaPrintForm.vue): todos
+  de uma situação **ou** sócios marcados um a um (lista com busca por
+  nome/matrícula/CPF e "Marcar todos/encontrados"), a ordem e a validade
+  (data, padrão hoje + 12 meses; desmarcada, o campo some).
+- **Uma só:** "Gerar carteirinha" na sidebar da ficha do sócio → o mesmo
+  modal, que nesse caso só pergunta a validade.
+- Tela [ImprimirCarteirinhas.vue](../src/views/ImprimirCarteirinhas.vue)
+  (`/socios/carteirinhas/imprimir?ids=|situacao=&ordem=&validade=`, abre
+  imprimindo), dados de `MemberModel.listarParaCarteirinha`. **Frente e
+  verso lado a lado** (a pedido, como no modelo em papel da associação):
+  cada sócio vira um `.par` (bloco de 171,2 × 54 mm) com a frente à
+  esquerda e o verso à direita, colados por uma linha de dobra tracejada.
+  Recorta-se o contorno, dobra-se e cola-se (ou plastifica-se), em
+  qualquer impressora, de um lado só. Margem de 8 mm e 2 mm entre os pares
+  → **5 por folha A4/Ofício** (5 × 54 + 4 × 2 = 278 mm ≤ 281 mm; com
+  3 mm a 5ª fileira já não cabia), 4 em Carta (lido de `getPrintConfig`).
+  As folhas são montadas explicitamente (`.folha` + `break-after: page`).
+  Os pares são blocos comuns, e não grid, porque o WebKitGTK erra a
+  fragmentação de grid. Uma versão intermediária tinha também um modo
+  duplex (folha de frentes + folha de versos espelhada); saiu quando o
+  lado a lado virou o padrão.
+- **Cantos retos (90°)** no cartão, na foto e nas caixas de dados, a pedido.
+- **Aparência personalizável, por associação**
+  ([CarteirinhaLayout.ts](../src/models/CarteirinhaLayout.ts), em
+  `system_settings`, chave `carteirinha.layout`; vai junto no backup):
+  logo do verso (o app não tinha campo de logo da associação; ficou aqui);
+  assinatura do presidente em PNG (o seletor só aceita `.png`); frase do
+  verso (salva ao sair do campo, com botão "Frase padrão") e o liga/desliga
+  do rodapé de endereço e contato. Layout salvo antes dessas opções lê os
+  padrões (frase padrão, rodapé ligado);
+  imagem de fundo, só na frente (via `read_image_as_data_url`, até 5 MB; ideal
+  1011 × 638 px), que cobre o cartão todo, some com a faixa colorida e
+  põe os campos em caixas brancas translúcidas, com texto do topo claro ou
+  escuro conforme a arte; cores do fundo padrão (principal = faixa,
+  filete, rótulos; e a cor das caixas dos campos), com botão "Cores
+  padrão". Tudo se ajusta na barra de ações da própria tela de impressão
+  (que não sai no papel), com pré-visualização ao vivo; cada alteração
+  salva vira uma linha no histórico (`comAtividade`). As cores não usam os
+  tokens do app porque o `@media print` troca `--accent` por preto.
+- Validado em PDF A4 (Chrome headless, CSS real): 7 sócios → 5 + 2 pares,
+  nome e nome de associação longos (cortados em 2 linhas), fundo padrão,
+  com imagem e com cores trocadas, frente no pior caso (nome longo + 6
+  campos), verso com e sem logo e com e sem a assinatura em PNG, e verso
+  com frase curta, frase longa (2 linhas), sem frase e sem rodapé.
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:

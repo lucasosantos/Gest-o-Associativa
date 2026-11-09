@@ -71,6 +71,22 @@ export interface SocioListaImpressao {
   birth_date: string | null;
 }
 
+/** Linha de `MemberModel.listarParaCarteirinha` — o que vai impresso na carteirinha. */
+export interface SocioCarteirinha {
+  id: string;
+  registration_number: string;
+  association_date: string;
+  status: StatusSocio;
+  full_name: string;
+  cpf: string | null;
+  rg: string | null;
+  birth_date: string | null;
+  photo: string | null;
+}
+
+/** Quem sai nas carteirinhas: sócios escolhidos um a um (`ids`) ou todos de uma situação (`null` = todas). */
+export type FiltroCarteirinha = { ids: string[] } | { situacao: StatusSocio | null };
+
 /** Linha de `MemberModel.listParaExportacao` — sócio + pessoa + contato e endereço principais. */
 export interface SocioExportacao {
   registration_number: string;
@@ -274,6 +290,45 @@ export class MemberModel {
        FROM members m
        JOIN people p ON p.id = m.person_id
        WHERE m.association_id = $1 ${filtroSituacao}
+       ORDER BY ${ordenacao}`,
+      parametros
+    );
+  }
+
+  /**
+   * Carteirinhas (`ImprimirCarteirinhas.vue`): sócios escolhidos pelo id ou
+   * filtrados pela situação, com foto, CPF, RG e nascimento. Id de outra
+   * associação é ignorado (o filtro por `association_id` vale sempre).
+   */
+  static async listarParaCarteirinha(
+    filtro: FiltroCarteirinha,
+    ordem: OrdemListaSocios = "NOME"
+  ): Promise<SocioCarteirinha[]> {
+    const parametros: string[] = [getCurrentAssociationId()];
+    let condicao = "";
+    if ("ids" in filtro) {
+      if (filtro.ids.length === 0) return [];
+      const marcadores = filtro.ids.map((id) => {
+        parametros.push(id);
+        return `$${parametros.length}`;
+      });
+      condicao = `AND m.id IN (${marcadores.join(", ")})`;
+    } else if (filtro.situacao) {
+      parametros.push(filtro.situacao);
+      condicao = "AND m.status = $2";
+    }
+    const ordenacao =
+      ordem === "MATRICULA"
+        ? "CAST(m.registration_number AS INTEGER), m.registration_number, p.full_name"
+        : "p.full_name";
+
+    const db = await getDatabase();
+    return db.select<SocioCarteirinha[]>(
+      `SELECT m.id, m.registration_number, m.association_date, m.status,
+              p.full_name, p.cpf, p.rg, p.birth_date, p.photo
+       FROM members m
+       JOIN people p ON p.id = m.person_id
+       WHERE m.association_id = $1 ${condicao}
        ORDER BY ${ordenacao}`,
       parametros
     );

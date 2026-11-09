@@ -25,6 +25,7 @@ import MembershipBulkPaymentForm from "../modals/MembershipBulkPaymentForm.vue";
 import MembershipAdvancePaymentForm from "../modals/MembershipAdvancePaymentForm.vue";
 import MembershipAgreementForm from "../modals/MembershipAgreementForm.vue";
 import DeclaracaoForm from "../modals/DeclaracaoForm.vue";
+import CarteirinhaPrintForm from "../modals/CarteirinhaPrintForm.vue";
 
 const route = useRoute();
 const router = useRouter();
@@ -288,6 +289,16 @@ function abrirGerarDeclaracao() {
   });
 }
 
+/** Carteirinha só deste sócio — o modal pergunta só a validade. */
+function abrirGerarCarteirinha() {
+  if (!socio.value) return;
+  openModal({
+    title: "Gerar carteirinha",
+    component: CarteirinhaPrintForm,
+    props: { memberId: socio.value.id, fullName: socio.value.full_name },
+  });
+}
+
 function abrirVincularDocumento() {
   openModal({
     title: "Vincular documento",
@@ -306,6 +317,7 @@ function atualizarSidebar() {
     { id: "editar", label: "Editar sócio", icon: "edit", onClick: abrirEdicao },
     { id: "situacao", label: "Alterar situação", icon: "clock", onClick: abrirAlterarSituacao },
     { id: "imprimir-ficha", label: "Imprimir ficha", icon: "file", onClick: abrirImprimirFicha },
+    { id: "carteirinha", label: "Gerar carteirinha", icon: "card", onClick: abrirGerarCarteirinha },
     { id: "declaracao", label: "Gerar declaração", icon: "file", onClick: abrirGerarDeclaracao },
     { id: "relatorio-financeiro", label: "Gerar relatório financeiro", icon: "dollar", onClick: abrirRelatorioFinanceiro },
   ];

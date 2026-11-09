@@ -23,7 +23,8 @@ opcional). Domínio e decisões: [docs/dominio-associacoes.md](docs/dominio-asso
 | `npm run tauri dev` | roda o app completo (Tauri + Vite) |
 | `npm run build` | `vue-tsc -b && vite build` |
 | `npm run type-check` | typecheck isolado (`vue-tsc -b`; use `--force` pra rebuild limpo) |
-| `npm run tauri build` | gera o binário/instalador |
+| `npm run tauri build` | gera o binário/instalador da plataforma atual |
+| `npm run compilar` (`:linux` / `:windows`) | [scripts/compilar.sh](scripts/compilar.sh): no Linux, gera .deb/.rpm/.AppImage e o .exe (NSIS) do Windows via `cargo-xwin`; copia pra `instaladores/<versão>/` (o .msi só sai no Windows/CI) |
 | `cd src-tauri && cargo check` | checa o Rust |
 
 Não há scripts de `lint` nem de `test` — **o projeto não tem testes
