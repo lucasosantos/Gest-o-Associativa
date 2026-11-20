@@ -107,12 +107,22 @@ sudo apt install ./gestao-associativa_x.x.x_amd64.deb
 - **Planos** — planos de mensalidade com valores diferentes por categoria de
   sócio (disponível quando a associação usa o modo "Múltiplos planos").
 - **Cobranças** — controle das mensalidades dos sócios: pagamento avulso,
-  pagamento em lote, pagamento adiantado, acordos de renegociação e
-  emissão de recibo.
-- **Financeiro** — contas financeiras (caixa, banco), lançamentos manuais,
-  estornos, contas a pagar e a receber com parcelas, doações,
-  transferências entre contas e relatórios (extrato de conta, prestação de
-  contas por período).
+  pagamento em lote e adiantado (vários meses num único lançamento no
+  caixa), pagamento com **prestação de serviço** (quantos meses o serviço
+  vale, descrição do serviço e relatório em PDF opcional — sem dinheiro no
+  caixa), acordos de renegociação, emissão de recibo e reset das
+  mensalidades de um sócio (com justificativa). Cada mensalidade tem um
+  código (ex.: `01-0012-03-2026`) e mostra o lançamento que a pagou.
+- **Financeiro** — contas financeiras (caixa, banco; renomear com motivo),
+  lançamentos manuais numerados (ex.: `01-L-2026-000123`) com o saldo depois
+  de cada um, de uma conta ou de todas juntas, estornos (que reabrem as
+  mensalidades/parcelas que o lançamento pagava; e, para lançamento feito
+  por engano, apagar o lançamento já estornado, com o motivo registrado em
+  Atividades), contas a pagar e a receber com parcelas, doações,
+  transferências entre contas, relatórios (extrato de conta, prestação de
+  contas por período, com saldo após cada lançamento) e **verificação de
+  consistência**, que encontra e corrige (com motivo) mensalidades pagas
+  sem dinheiro, lançamentos soltos ou duplicados e estornos incompletos.
 - **Documentos** — upload e vínculo de arquivos a sócios, protocolos e bens,
   livros de protocolo, protocolo de entrada/saída de documentos e emissão
   de declarações.

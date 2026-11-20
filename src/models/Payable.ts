@@ -1,7 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { CashTransactionModel } from "./CashTransaction.js";
+import { CashTransactionModel, registrarBaixaDeParcela } from "./CashTransaction.js";
 import { gerarParcelasIguais } from "../utils/installments.js";
 import { comAtividade } from "./ActivityLog.js";
 import { formatarMoeda } from "../utils/format.js";
@@ -151,6 +151,7 @@ export class PayableModel {
       installmentId,
     ]);
     if (!parcela) throw new Error("Parcela não encontrada.");
+    if (parcela.status === "CANCELADA") throw new Error("Esta parcela foi cancelada — não pode receber baixa.");
 
     const payable = await PayableModel.get(parcela.payable_id);
     if (!payable) throw new Error("Conta a pagar não encontrada.");
@@ -176,22 +177,13 @@ export class PayableModel {
           source_id: installmentId,
         });
 
-        await db.execute(
-          `INSERT INTO payable_payments (id, payable_installment_id, cash_transaction_id, amount, paid_at)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [newId(), installmentId, transacao.id, valorPago, dados.payment_date]
-        );
-
-        const novoPago = parcela.paid_amount + valorPago;
-        const quitada = novoPago >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
-        await db.execute("UPDATE payable_installments SET paid_amount = $2, status = $3, paid_at = $4 WHERE id = $1", [
-          installmentId,
-          novoPago,
-          quitada ? "PAGA" : "PARCIAL",
-          quitada ? dados.payment_date : null,
-        ]);
-
-        await PayableModel.refreshStatus(payable.id);
+        await registrarBaixaDeParcela("PAGAR", {
+          parcelaId: installmentId,
+          contaId: payable.id,
+          cashTransactionId: transacao.id,
+          amount: valorPago,
+          data: dados.payment_date,
+        });
       },
       () => ({
         module: "FINANCEIRO",

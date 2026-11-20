@@ -1545,6 +1545,82 @@ fn all_migrations() -> Vec<Migration> {
             END;
         ",
         kind: MigrationKind::Up,
+    }, Migration {
+        version: 25,
+        description: "codigos_legiveis_de_lancamento_e_acordo",
+        // Pedido do usuário: um código legível pra ligar mensalidade ↔
+        // acordo ↔ lançamento (ver `src/utils/codigos.ts`):
+        //   mensalidade `01-0012-03-2026` (calculado, não gravado),
+        //   acordo      `01-0012-AC-0001` (`membership_agreements.numero`),
+        //   lançamento  `01-L-2026-000123` (`cash_transactions.ano` + `numero`).
+        // `associations.numero` é o "01": fica NULL aqui e o app preenche ao
+        // abrir a associação (posição dela na lista do config.json).
+        //
+        // Backfill: numera o que já existe em ordem de data + criação
+        // (desempate pelo id), por associação — lançamentos dentro de cada
+        // ano da `transaction_date`. Novos registros pegam `MAX(numero) + 1`
+        // no próprio INSERT (atômico no SQLite). Os índices únicos garantem
+        // que nenhum número se repete.
+        sql: "
+            ALTER TABLE associations ADD COLUMN numero INTEGER CHECK (numero IS NULL OR numero > 0);
+
+            ALTER TABLE cash_transactions ADD COLUMN ano INTEGER;
+            ALTER TABLE cash_transactions ADD COLUMN numero INTEGER;
+            UPDATE cash_transactions SET ano = CAST(substr(transaction_date, 1, 4) AS INTEGER);
+            UPDATE cash_transactions SET numero = (
+                SELECT COUNT(*) FROM cash_transactions c2
+                WHERE c2.association_id = cash_transactions.association_id
+                  AND c2.ano = cash_transactions.ano
+                  AND (c2.transaction_date, c2.created_at, c2.id)
+                      <= (cash_transactions.transaction_date, cash_transactions.created_at, cash_transactions.id)
+            );
+            CREATE UNIQUE INDEX idx_cash_transactions_numero ON cash_transactions(association_id, ano, numero);
+
+            ALTER TABLE membership_agreements ADD COLUMN numero INTEGER;
+            UPDATE membership_agreements SET numero = (
+                SELECT COUNT(*) FROM membership_agreements a2
+                WHERE a2.association_id = membership_agreements.association_id
+                  AND (a2.agreement_date, a2.created_at, a2.id)
+                      <= (membership_agreements.agreement_date, membership_agreements.created_at, membership_agreements.id)
+            );
+            CREATE UNIQUE INDEX idx_membership_agreements_numero ON membership_agreements(association_id, numero);
+        ",
+        kind: MigrationKind::Up,
+    }, Migration {
+        version: 26,
+        description: "mensalidade_paga_com_prestacao_de_servico",
+        // Pedido do usuário: o sócio paga mensalidades prestando um serviço à
+        // associação (sem dinheiro). `membership_services` é a prestação —
+        // quantos meses ela vale, o texto explicando o serviço e, opcional, o
+        // PDF do relatório (`document_id`, documento comum do módulo
+        // Documentos, também vinculado ao sócio). Cada mês quitado é uma linha
+        // normal em `membership_payments` SEM lançamento de caixa
+        // (`cash_transaction_id` NULL) apontando pra cá por
+        // `membership_service_id` — por isso a verificação de consistência não
+        // a trata como "paga sem dinheiro". `reference_amount` = soma do valor
+        // mensal dos meses quitados, só referência (não entra no caixa).
+        // `numero` = código `01-0012-PS-0001` (ver `src/utils/codigos.ts`).
+        sql: "
+            CREATE TABLE membership_services (
+                id TEXT PRIMARY KEY,
+                association_id TEXT NOT NULL REFERENCES associations(id),
+                member_id TEXT NOT NULL REFERENCES members(id),
+                numero INTEGER NOT NULL,
+                service_date TEXT NOT NULL,
+                months_count INTEGER NOT NULL CHECK (months_count > 0),
+                description TEXT NOT NULL,
+                reference_amount INTEGER NOT NULL DEFAULT 0 CHECK (reference_amount >= 0),
+                approved_by TEXT,
+                document_id TEXT REFERENCES documents(id),
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                UNIQUE (association_id, numero)
+            );
+
+            CREATE INDEX idx_membership_services_member ON membership_services(member_id);
+
+            ALTER TABLE membership_payments ADD COLUMN membership_service_id TEXT REFERENCES membership_services(id);
+        ",
+        kind: MigrationKind::Up,
     }]
 }
 

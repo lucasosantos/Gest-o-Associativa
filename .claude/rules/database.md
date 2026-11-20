@@ -4,7 +4,7 @@
   [lib.rs](../../src-tauri/src/lib.rs), registradas via `tauri-plugin-sql`.
   **São append-only**: nunca edite uma `Migration` já existente — toda mudança de
   schema é uma nova entrada com `version` incrementado (hoje a última é
-  `version: 24`). Só declare `REFERENCES` para tabela que já existe — o
+  `version: 26`). Só declare `REFERENCES` para tabela que já existe — o
   `sqlx` liga `PRAGMA foreign_keys = ON` e não dá pra desligar dentro da
   transação da migration (ver `.claude/docs/plano-implementacao.md`).
 - SQLite não aceita `DEFAULT CURRENT_TIMESTAMP` em `ALTER TABLE ... ADD COLUMN`.
@@ -25,3 +25,8 @@
   legível pro usuário final, com o nome do registro (ex.: `Novo sócio — Lucas
   (matrícula 12)`). `activity_logs` é imutável (triggers bloqueiam
   UPDATE/DELETE).
+- Não há transação (pool de conexões do plugin): ação que grava em mais de uma
+  tabela valida tudo ANTES de gravar e, num `try/catch`, desfaz o que já gravou
+  se um passo seguinte falhar — lançamento solto no caixa vira saldo errado e
+  pagamento em dobro. Lançamento novo sempre via `inserirLancamento`
+  (`CashTransaction.ts`), que gera o número legível (`ano`/`numero`).

@@ -56,6 +56,12 @@ export interface Association {
    * `MemberModel.listarAptosAVotar` (migration `version: 23`). `0` = sem carência.
    */
   voting_min_membership_months: number;
+  /**
+   * Número da associação, prefixo dos códigos legíveis (`01-L-2026-000123`,
+   * ver `src/utils/codigos.ts`) — migration `version: 25`. `null` até o app
+   * preencher ao abrir (posição na lista do config.json).
+   */
+  numero: number | null;
   /** JSON serializado manualmente — SQLite não tem tipo JSONB nativo. */
   settings: string;
   created_at: string;
@@ -77,6 +83,7 @@ export interface NovaAssociacao {
   /** SQLite não tem booleano nativo: 0 = manual, 1 = automática. */
   auto_registration_number?: 0 | 1;
   voting_min_membership_months?: number;
+  numero?: number | null;
 }
 
 export type AtualizacaoAssociacao = Partial<NovaAssociacao>;
@@ -157,6 +164,16 @@ export class AssociationModel {
       [associationId]
     );
     return String(numero);
+  }
+
+  /**
+   * Grava o número da associação quando ele ainda não existe (banco anterior
+   * à migration 25) — sem linha em Atividades: é preenchimento automático,
+   * não ação do usuário. `numero IS NULL` no WHERE: nunca troca um já definido.
+   */
+  static async definirNumeroInicial(id: string, numero: number): Promise<void> {
+    const db = await getDatabase();
+    await db.execute("UPDATE associations SET numero = $2 WHERE id = $1 AND numero IS NULL", [id, numero]);
   }
 
   static async update(id: string, dados: AtualizacaoAssociacao): Promise<void> {

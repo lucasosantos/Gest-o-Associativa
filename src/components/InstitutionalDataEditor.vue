@@ -23,6 +23,7 @@ import {
   setCurrentAssociationId,
   setCurrentMembershipMode,
   setCurrentAutoRegistrationNumber,
+  setCurrentAssociationNumero,
 } from "../composables/useCurrentAssociation.js";
 import Spinner from "../components/Spinner.vue";
 
@@ -67,6 +68,8 @@ const contributionDueDay = ref(10);
 const autoRegistrationNumber = ref(false);
 /** Carência para votar, em meses de filiação (ver `Association.voting_min_membership_months`). */
 const votingMinMonths = ref(0);
+/** Número da associação — prefixo dos códigos (`01-L-2026-000123`, ver `src/utils/codigos.ts`). */
+const numeroAssociacao = ref<number | null>(null);
 
 const street = ref("");
 const number = ref("");
@@ -92,6 +95,7 @@ async function load() {
     contributionDueDay.value = 10;
     autoRegistrationNumber.value = false;
     votingMinMonths.value = 0;
+    numeroAssociacao.value = null;
     addressId.value = null;
     street.value = "";
     number.value = "";
@@ -128,6 +132,7 @@ async function load() {
     contributionDueDay.value = associacao.monthly_contribution_due_day ?? 10;
     autoRegistrationNumber.value = Boolean(associacao.auto_registration_number);
     votingMinMonths.value = associacao.voting_min_membership_months ?? 0;
+    numeroAssociacao.value = associacao.numero;
 
     const [enderecoPrincipal] = await AddressModel.listByAssociation(associacao.id);
     if (enderecoPrincipal) {
@@ -205,6 +210,10 @@ async function handleSave() {
     erro.value = "Os meses de associado para ter direito a voto devem ser um número inteiro, 0 ou maior.";
     return;
   }
+  if (numeroAssociacao.value !== null && (!Number.isInteger(numeroAssociacao.value) || numeroAssociacao.value < 1)) {
+    erro.value = "O número da associação deve ser um número inteiro, 1 ou maior.";
+    return;
+  }
   if (enderecoIncompleto()) {
     erro.value = "Para salvar o endereço, preencha ao menos rua, cidade e estado.";
     return;
@@ -227,6 +236,7 @@ async function handleSave() {
       monthly_contribution_due_day: contributionDueDay.value || null,
       auto_registration_number: (autoRegistrationNumber.value ? 1 : 0) as 0 | 1,
       voting_min_membership_months: votingMinMonths.value,
+      ...(numeroAssociacao.value ? { numero: numeroAssociacao.value } : {}),
     };
 
     if (props.associationId) {
@@ -267,6 +277,7 @@ async function handleSave() {
     }
     setCurrentMembershipMode(membershipMode.value);
     setCurrentAutoRegistrationNumber(autoRegistrationNumber.value);
+    if (numeroAssociacao.value) setCurrentAssociationNumero(numeroAssociacao.value);
 
     // Fundação preenchida (ou corrigida) — garante na hora que o
     // calendário de parcelas cobre desde ela até o mês atual (ver
@@ -319,6 +330,12 @@ async function handleSave() {
     <dl class="view-grid">
       <dt>Numeração</dt>
       <dd>{{ autoRegistrationNumber ? "Automática (sequencial)" : "Manual" }}</dd>
+    </dl>
+
+    <h3 class="section-title">Códigos</h3>
+    <dl class="view-grid">
+      <dt>Número da associação</dt>
+      <dd>{{ String(numeroAssociacao ?? 1).padStart(2, "0") }}</dd>
     </dl>
 
     <h3 class="section-title">Direito a voto</h3>
@@ -431,6 +448,16 @@ async function handleSave() {
             ? "Ao registrar um sócio, o número da matrícula é gerado sozinho — o campo some da ficha de sócio."
             : "Ao registrar um sócio, o usuário informa o número da matrícula na ficha."
         }}
+      </p>
+    </div>
+
+    <h3 class="section-title">Códigos</h3>
+    <div class="field">
+      <label class="field-label" for="numero-associacao">Número da associação</label>
+      <input id="numero-associacao" v-model.number="numeroAssociacao" type="number" min="1" step="1" :disabled="saving" />
+      <p class="field-hint">
+        Começo dos códigos de mensalidade, acordo e lançamento (ex.: 01-0012-03-2026, 01-L-2026-000123). Cada
+        associação do computador deve ter um número diferente.
       </p>
     </div>
 

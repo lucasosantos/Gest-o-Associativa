@@ -1,15 +1,22 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref, watch } from "vue";
+import { computed, onMounted, reactive, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { FinancialAccountModel, type FinancialAccountComSaldo, type ExtratoConta } from "../models/FinancialAccount.js";
 import { FinancialCategoryModel, type FinancialCategory } from "../models/FinancialCategory.js";
 import { CostCenterModel, type CostCenter } from "../models/CostCenter.js";
 import { PaymentMethodModel, type PaymentMethod } from "../models/PaymentMethod.js";
-import { CashTransactionModel, type CashTransactionComNomes, type CashTransactionRelatorio } from "../models/CashTransaction.js";
+import {
+  CashTransactionModel,
+  codigoDoLancamento,
+  totaisDoPeriodo,
+  type CashTransactionComNomes,
+  type CashTransactionRelatorio,
+} from "../models/CashTransaction.js";
 import { PayableModel, type PayableComFornecedor, type PayableInstallment } from "../models/Payable.js";
 import { ReceivableModel, type ReceivableComOrigem, type ReceivableInstallment } from "../models/Receivable.js";
 import { DonationModel, type DonationComDoador } from "../models/Donation.js";
-import { formatarMoeda, formatarData } from "../utils/format.js";
+import { MembershipServiceModel, type PrestacaoServicoRelatorio } from "../models/MembershipService.js";
+import { formatarMoeda, formatarData, hojeIso } from "../utils/format.js";
 import { setSidebarTools } from "../composables/useSidebar.js";
 import { openModal } from "../composables/useModal.js";
 import { useAssociationScopedData } from "../composables/useAssociationScopedData.js";
@@ -26,6 +33,10 @@ import ReceivableForm from "../modals/ReceivableForm.vue";
 import PayerForm from "../modals/PayerForm.vue";
 import ReceivableInstallmentPaymentForm from "../modals/ReceivableInstallmentPaymentForm.vue";
 import DonationForm from "../modals/DonationForm.vue";
+import CashTransactionDeleteForm from "../modals/CashTransactionDeleteForm.vue";
+import FinancialAccountRenameForm from "../modals/FinancialAccountRenameForm.vue";
+import CashTransactionLinksModal from "../modals/CashTransactionLinksModal.vue";
+import ConsistenciaForm from "../modals/ConsistenciaForm.vue";
 
 // Contas a pagar e contas a receber viviam em telas próprias
 // (`/contas-a-pagar`, `/contas-a-receber`) e passaram a ser abas daqui a
@@ -49,9 +60,30 @@ const categorias = ref<FinancialCategory[]>([]);
 const centrosCusto = ref<CostCenter[]>([]);
 const formasPagamento = ref<PaymentMethod[]>([]);
 
+/**
+ * Filtro de conta da aba Lançamentos. `TODAS_AS_CONTAS` junta os lançamentos
+ * de todas as contas numa lista só (padrão); `""` = ainda não escolhido
+ * (estado logo depois de trocar de associação, ver `useAssociationScopedData`).
+ */
+const TODAS_AS_CONTAS = "TODAS";
 const contaSelecionadaId = ref("");
+const mostrandoTodasAsContas = computed(() => contaSelecionadaId.value === TODAS_AS_CONTAS);
+/** Soma dos saldos de todas as contas — resumo exibido com "Todas as contas". */
+const saldoSomado = computed(() => contas.value.reduce((total, conta) => total + conta.balance, 0));
 const lancamentos = ref<CashTransactionComNomes[]>([]);
 const carregandoLancamentos = ref(false);
+/** Busca da aba Lançamentos: pelo código (`01-L-2026-000123`, ou só `123`) ou pela descrição. */
+const buscaLancamento = ref("");
+const lancamentosFiltrados = computed(() => {
+  const termo = buscaLancamento.value.trim().toLowerCase();
+  if (!termo) return lancamentos.value;
+  return lancamentos.value.filter(
+    (l) =>
+      codigoDoLancamento(l).toLowerCase().includes(termo) ||
+      String(l.numero ?? "") === termo.replace(/^0+/, "") ||
+      l.description.toLowerCase().includes(termo)
+  );
+});
 
 // --- Contas a pagar ---
 const contasAPagar = ref<PayableComFornecedor[]>([]);
@@ -99,21 +131,28 @@ function primeiroDiaDoMes(): string {
 }
 
 const prestacaoInicio = ref(primeiroDiaDoMes());
-const prestacaoFim = ref(new Date().toISOString().slice(0, 10));
+const prestacaoFim = ref(hojeIso());
 const prestacaoLancamentos = ref<CashTransactionRelatorio[]>([]);
 const prestacaoGerada = ref(false);
+const prestacaoTotais = computed(() => totaisDoPeriodo(prestacaoLancamentos.value));
 const prestacaoCarregando = ref(false);
+/** Mensalidades pagas com prestação de serviço no período (fora do caixa). */
+const prestacaoServicos = ref<PrestacaoServicoRelatorio[]>([]);
+const prestacaoTotalServicos = computed(() => prestacaoServicos.value.reduce((t, s) => t + s.reference_amount, 0));
 
 const extratoContaId = ref("");
 const extratoInicio = ref(primeiroDiaDoMes());
-const extratoFim = ref(new Date().toISOString().slice(0, 10));
+const extratoFim = ref(hojeIso());
 const extratoDados = ref<ExtratoConta | null>(null);
 const extratoCarregando = ref(false);
 
 async function gerarPrestacaoContas() {
   prestacaoCarregando.value = true;
   try {
-    prestacaoLancamentos.value = await CashTransactionModel.listarPorPeriodo(prestacaoInicio.value, prestacaoFim.value);
+    [prestacaoLancamentos.value, prestacaoServicos.value] = await Promise.all([
+      CashTransactionModel.listarPorPeriodo(prestacaoInicio.value, prestacaoFim.value),
+      MembershipServiceModel.listarPorPeriodo(prestacaoInicio.value, prestacaoFim.value),
+    ]);
     prestacaoGerada.value = true;
   } finally {
     prestacaoCarregando.value = false;
@@ -146,7 +185,7 @@ function imprimirExtrato() {
 async function carregarContas() {
   contas.value = await FinancialAccountModel.list();
   if (!contaSelecionadaId.value && contas.value[0]) {
-    contaSelecionadaId.value = contas.value[0].id;
+    contaSelecionadaId.value = TODAS_AS_CONTAS;
   }
   if (!extratoContaId.value && contas.value[0]) {
     extratoContaId.value = contas.value[0].id;
@@ -172,7 +211,9 @@ async function carregarLancamentos() {
   }
   carregandoLancamentos.value = true;
   try {
-    lancamentos.value = await CashTransactionModel.listByAccount(contaSelecionadaId.value);
+    lancamentos.value = mostrandoTodasAsContas.value
+      ? await CashTransactionModel.list()
+      : await CashTransactionModel.listByAccount(contaSelecionadaId.value);
   } finally {
     carregandoLancamentos.value = false;
   }
@@ -240,13 +281,23 @@ function abrirNovaFormaPagamento() {
   });
 }
 
+/** Troca o nome da conta com motivo obrigatório (vai pra Atividades com o nome antigo). */
+function abrirRenomearConta(conta: FinancialAccountComSaldo) {
+  openModal({
+    title: "Renomear conta",
+    component: FinancialAccountRenameForm,
+    props: { conta, onSaved: () => Promise.all([carregarContas(), carregarLancamentos()]) },
+  });
+}
+
 function abrirNovoLancamento() {
-  if (!contaSelecionadaId.value) return;
+  if (contas.value.length === 0) return;
   openModal({
     title: "Novo lançamento",
     component: CashTransactionForm,
     props: {
-      accountId: contaSelecionadaId.value,
+      // Com "Todas as contas", o formulário começa na primeira e deixa escolher.
+      accountId: mostrandoTodasAsContas.value ? undefined : contaSelecionadaId.value,
       onSaved: () => Promise.all([carregarContas(), carregarLancamentos()]),
     },
   });
@@ -260,8 +311,25 @@ function abrirTransferencia() {
   });
 }
 
+/** O que acontece com cada tipo de registro quando o lançamento que o quitava é estornado. */
+const EFEITO_DESFAZER_BAIXAS =
+  "• mensalidades voltam a ficar em aberto (acordo desfeito, recibo cancelado);\n" +
+  "• parcela de conta a pagar/receber volta a ficar em aberto (ou parcial);\n" +
+  "• doação é desfeita;\n" +
+  "• evento de patrimônio continua, mas sem lançamento no caixa.";
+
 async function estornar(lancamento: CashTransactionComNomes) {
-  const confirmado = confirm(`Estornar o lançamento "${lancamento.description}"?`);
+  const quitacoes = lancamento.quitacoes_count ?? 0;
+  const aviso =
+    quitacoes > 0
+      ? `\n\nEste lançamento quita ${quitacoes} registro(s). Ao estornar, eles também são desfeitos:\n${EFEITO_DESFAZER_BAIXAS}`
+      : "";
+  const avisoTransferencia = lancamento.transfer_group_id
+    ? "\n\nÉ uma transferência: as DUAS contas são estornadas juntas (o dinheiro volta pra conta de origem)."
+    : "";
+  const confirmado = confirm(
+    `Estornar o lançamento ${codigoDoLancamento(lancamento)} "${lancamento.description}"?${aviso}${avisoTransferencia}`
+  );
   if (!confirmado) return;
 
   try {
@@ -270,6 +338,64 @@ async function estornar(lancamento: CashTransactionComNomes) {
   } catch (error) {
     alert(`Não foi possível estornar: ${error instanceof Error ? error.message : error}`);
   }
+}
+
+/**
+ * Só existe depois do estorno (lançamento `ESTORNADA` ou a linha de
+ * `ESTORNO`): apaga o par de vez, com motivo registrado em Atividades — ver
+ * `CashTransactionModel.apagarEstornado`.
+ */
+function podeApagar(lancamento: CashTransactionComNomes): boolean {
+  return lancamento.status === "ESTORNADA" || lancamento.transaction_type === "ESTORNO";
+}
+
+/**
+ * Lançamento estornado que ainda quita algum registro — só acontece com
+ * estorno feito antes de o estorno passar a desfazer as baixas (ver
+ * `CashTransactionModel.desfazerBaixas`).
+ */
+function precisaDesfazerBaixas(lancamento: CashTransactionComNomes): boolean {
+  return lancamento.status === "ESTORNADA" && (lancamento.quitacoes_count ?? 0) > 0;
+}
+
+async function desfazerBaixas(lancamento: CashTransactionComNomes) {
+  const confirmado = confirm(
+    `O lançamento "${lancamento.description}" já foi estornado, mas ${lancamento.quitacoes_count} registro(s) ` +
+      `continuam quitados por ele.\n\nDesfazer agora?\n${EFEITO_DESFAZER_BAIXAS}`
+  );
+  if (!confirmado) return;
+
+  try {
+    await CashTransactionModel.desfazerBaixas(lancamento.id);
+    await carregarLancamentos();
+  } catch (error) {
+    alert(`Não foi possível desfazer as baixas: ${error instanceof Error ? error.message : error}`);
+  }
+}
+
+function abrirVinculos(lancamento: CashTransactionComNomes) {
+  openModal({
+    title: `Lançamento ${codigoDoLancamento(lancamento)}`,
+    component: CashTransactionLinksModal,
+    props: { lancamento },
+  });
+}
+
+/** Verificação/correção de inconsistências do financeiro (ver `ConsistenciaModel`). */
+function abrirConsistencia() {
+  openModal({
+    title: "Verificar consistência do financeiro",
+    component: ConsistenciaForm,
+    props: { onSaved: () => Promise.all([carregarContas(), carregarLancamentos(), carregarContasAPagar(), carregarContasAReceber(), carregarDoacoes()]) },
+  });
+}
+
+function abrirApagarLancamento(lancamento: CashTransactionComNomes) {
+  openModal({
+    title: "Apagar lançamento estornado",
+    component: CashTransactionDeleteForm,
+    props: { lancamento, onSaved: () => Promise.all([carregarContas(), carregarLancamentos()]) },
+  });
 }
 
 function abrirNovaContaPagar() {
@@ -335,10 +461,14 @@ function atualizarSidebar() {
   }
 
   const itensPorAba: Record<Exclude<Aba, "a-receber">, { id: string; label: string; icon: string; onClick: () => void }[]> = {
-    contas: [{ id: "nova-conta", label: "Nova conta", icon: "plus", onClick: abrirNovaConta }],
+    contas: [
+      { id: "nova-conta", label: "Nova conta", icon: "plus", onClick: abrirNovaConta },
+      { id: "consistencia", label: "Verificar consistência", icon: "alert", onClick: abrirConsistencia },
+    ],
     lancamentos: [
       { id: "novo-lancamento", label: "Novo lançamento", icon: "plus", onClick: abrirNovoLancamento },
       { id: "transferencia", label: "Transferência", icon: "list", onClick: abrirTransferencia },
+      { id: "consistencia", label: "Verificar consistência", icon: "alert", onClick: abrirConsistencia },
     ],
     "a-pagar": [
       { id: "nova-conta-pagar", label: "Nova conta a pagar", icon: "plus", onClick: abrirNovaContaPagar },
@@ -447,6 +577,7 @@ onMounted(atualizarSidebar);
               <th>Nome</th>
               <th>Tipo</th>
               <th>Saldo atual</th>
+              <th></th>
             </tr>
           </thead>
           <tbody>
@@ -454,6 +585,9 @@ onMounted(atualizarSidebar);
               <td>{{ conta.name }}</td>
               <td>{{ conta.account_type }}</td>
               <td :class="{ negativo: conta.balance < 0 }">{{ formatarMoeda(conta.balance) }}</td>
+              <td>
+                <button type="button" class="link-btn" @click="abrirRenomearConta(conta)">Renomear</button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -465,32 +599,60 @@ onMounted(atualizarSidebar);
           <div class="filter-row">
             <label class="field-label" for="conta-filtro">Conta</label>
             <select id="conta-filtro" v-model="contaSelecionadaId">
+              <option :value="TODAS_AS_CONTAS">Todas as contas</option>
               <option v-for="conta in contas" :key="conta.id" :value="conta.id">{{ conta.name }}</option>
             </select>
+            <input
+              v-model="buscaLancamento"
+              type="search"
+              class="busca-lancamento"
+              placeholder="Buscar por nº/código ou descrição"
+            />
+            <span v-if="mostrandoTodasAsContas" class="saldo-somado">
+              Saldo somado das {{ contas.length }} conta(s):
+              <strong :class="{ negativo: saldoSomado < 0 }">{{ formatarMoeda(saldoSomado) }}</strong>
+            </span>
           </div>
 
           <div v-if="carregandoLancamentos" class="state-msg">Carregando...</div>
-          <p v-else-if="lancamentos.length === 0" class="state-msg">Nenhum lançamento nesta conta.</p>
+          <p v-else-if="lancamentos.length === 0" class="state-msg">
+            {{ mostrandoTodasAsContas ? "Nenhum lançamento ainda." : "Nenhum lançamento nesta conta." }}
+          </p>
+          <p v-else-if="lancamentosFiltrados.length === 0" class="state-msg">Nenhum lançamento encontrado na busca.</p>
           <table v-else class="data-table">
             <thead>
               <tr>
+                <th>Nº</th>
                 <th>Data</th>
+                <th v-if="mostrandoTodasAsContas">Conta</th>
                 <th>Descrição</th>
                 <th>Tipo</th>
                 <th>Categoria</th>
                 <th>Valor</th>
+                <th :title="mostrandoTodasAsContas ? 'Saldo somado de todas as contas logo depois deste lançamento' : 'Saldo da conta logo depois deste lançamento'">
+                  Saldo após
+                </th>
                 <th>Situação</th>
                 <th></th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="lancamento in lancamentos" :key="lancamento.id">
+              <tr v-for="lancamento in lancamentosFiltrados" :key="lancamento.id">
+                <td class="codigo">
+                  <button type="button" class="link-btn" title="Ver o que este lançamento quita" @click="abrirVinculos(lancamento)">
+                    {{ codigoDoLancamento(lancamento) }}
+                  </button>
+                </td>
                 <td>{{ formatarData(lancamento.transaction_date) }}</td>
+                <td v-if="mostrandoTodasAsContas">{{ lancamento.account_name }}</td>
                 <td>{{ lancamento.description }}</td>
                 <td>{{ TIPO_LABEL[lancamento.transaction_type] }}</td>
                 <td>{{ lancamento.category_name || "—" }}</td>
                 <td :class="{ negativo: lancamento.transaction_type === 'DESPESA' || lancamento.transaction_type === 'TRANSFERENCIA_SAIDA' }">
                   {{ formatarMoeda(lancamento.amount) }}
+                </td>
+                <td class="saldo-apos" :class="{ negativo: (lancamento.saldo_apos ?? 0) < 0 }">
+                  {{ lancamento.saldo_apos === null || lancamento.saldo_apos === undefined ? "—" : formatarMoeda(lancamento.saldo_apos) }}
                 </td>
                 <td>{{ STATUS_LABEL[lancamento.status] }}</td>
                 <td>
@@ -501,6 +663,24 @@ onMounted(atualizarSidebar);
                     @click="estornar(lancamento)"
                   >
                     Estornar
+                  </button>
+                  <button
+                    v-else-if="precisaDesfazerBaixas(lancamento)"
+                    type="button"
+                    class="link-btn"
+                    title="O caixa já foi estornado, mas o que ele pagava (mensalidades, conta, doação...) continua quitado"
+                    @click="desfazerBaixas(lancamento)"
+                  >
+                    Desfazer baixas
+                  </button>
+                  <button
+                    v-else-if="podeApagar(lancamento)"
+                    type="button"
+                    class="link-btn link-perigo"
+                    title="Apaga este lançamento e o estorno dele; fica registrado em Atividades"
+                    @click="abrirApagarLancamento(lancamento)"
+                  >
+                    Apagar
                   </button>
                 </td>
               </tr>
@@ -751,6 +931,7 @@ onMounted(atualizarSidebar);
             <table v-else class="data-table">
               <thead>
                 <tr>
+                  <th>Nº</th>
                   <th>Data</th>
                   <th>Conta</th>
                   <th>Categoria</th>
@@ -760,6 +941,7 @@ onMounted(atualizarSidebar);
               </thead>
               <tbody>
                 <tr v-for="lancamento in prestacaoLancamentos" :key="lancamento.id">
+                  <td class="codigo">{{ codigoDoLancamento(lancamento) }}</td>
                   <td>{{ formatarData(lancamento.transaction_date) }}</td>
                   <td>{{ lancamento.account_name }}</td>
                   <td>{{ lancamento.category_name || "—" }}</td>
@@ -768,6 +950,50 @@ onMounted(atualizarSidebar);
                 </tr>
               </tbody>
             </table>
+            <dl v-if="prestacaoLancamentos.length > 0" class="resumo-extrato">
+              <dt>Entradas</dt>
+              <dd>{{ formatarMoeda(prestacaoTotais.entradas) }}</dd>
+              <dt>Saídas</dt>
+              <dd>{{ formatarMoeda(prestacaoTotais.saidas) }}</dd>
+              <dt>Resultado</dt>
+              <dd :class="{ negativo: prestacaoTotais.saldo < 0 }">{{ formatarMoeda(prestacaoTotais.saldo) }}</dd>
+              <template v-if="prestacaoTotais.transferido > 0">
+                <dt>Transferido entre contas</dt>
+                <dd>{{ formatarMoeda(prestacaoTotais.transferido) }}</dd>
+              </template>
+            </dl>
+
+            <template v-if="prestacaoServicos.length > 0">
+              <h3 class="titulo-servicos">Mensalidades pagas com prestação de serviço (fora do caixa)</h3>
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Código</th>
+                    <th>Data</th>
+                    <th>Sócio</th>
+                    <th>Serviço</th>
+                    <th>Meses</th>
+                    <th>Mensalidade</th>
+                    <th>Valor do serviço</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="servico in prestacaoServicos" :key="servico.id">
+                    <td class="codigo">{{ servico.codigo }}</td>
+                    <td>{{ formatarData(servico.service_date) }}</td>
+                    <td>{{ servico.full_name }}</td>
+                    <td>{{ servico.description }}</td>
+                    <td>{{ servico.months_count }}</td>
+                    <td>{{ formatarMoeda(servico.valor_mensal) }}</td>
+                    <td>{{ formatarMoeda(servico.reference_amount) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <dl class="resumo-extrato">
+                <dt>Total em serviços (meses × mensalidade, não soma no saldo)</dt>
+                <dd>{{ formatarMoeda(prestacaoTotalServicos) }}</dd>
+              </dl>
+            </template>
           </template>
         </div>
 
@@ -800,18 +1026,22 @@ onMounted(atualizarSidebar);
             <table v-else class="data-table">
               <thead>
                 <tr>
+                  <th>Nº</th>
                   <th>Data</th>
                   <th>Categoria</th>
                   <th>Descrição</th>
                   <th>Valor</th>
+                  <th>Saldo após</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="movimento in extratoDados.movimentos" :key="movimento.id">
+                  <td class="codigo">{{ codigoDoLancamento(movimento) }}</td>
                   <td>{{ formatarData(movimento.transaction_date) }}</td>
                   <td>{{ movimento.category_name || "—" }}</td>
                   <td>{{ movimento.description }}</td>
                   <td :class="{ negativo: movimento.signed_amount < 0 }">{{ formatarMoeda(movimento.signed_amount) }}</td>
+                  <td :class="{ negativo: (movimento.saldo_apos ?? 0) < 0 }">{{ formatarMoeda(movimento.saldo_apos ?? 0) }}</td>
                 </tr>
               </tbody>
             </table>
@@ -823,6 +1053,28 @@ onMounted(atualizarSidebar);
 </template>
 
 <style scoped>
+.codigo {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.saldo-apos {
+  white-space: nowrap;
+  color: var(--text-muted);
+}
+
+.busca-lancamento {
+  padding: 0.4rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.82rem;
+  font-family: inherit;
+  min-width: 220px;
+}
+
 .tabs {
   display: flex;
   gap: 0.4rem;
@@ -879,6 +1131,11 @@ onMounted(atualizarSidebar);
   margin: 0 0 0.9rem;
   color: var(--text-muted);
   font-size: 0.82rem;
+}
+
+.titulo-servicos {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.9rem;
 }
 
 .resumo-extrato {
@@ -952,6 +1209,21 @@ onMounted(atualizarSidebar);
   color: #c0392b;
 }
 
+/* Resumo ao lado do filtro quando a aba Lançamentos mostra todas as contas juntas. */
+.saldo-somado {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--text-muted);
+}
+
+.saldo-somado strong {
+  color: var(--text);
+}
+
+.saldo-somado strong.negativo {
+  color: #c0392b;
+}
+
 .btn-secondary {
   padding: 0.45rem 0.9rem;
   border-radius: 6px;
@@ -976,6 +1248,11 @@ onMounted(atualizarSidebar);
   cursor: pointer;
   padding: 0;
   font-family: inherit;
+}
+
+/* Ação destrutiva (apagar lançamento estornado): mesmo vermelho dos erros do app. */
+.link-btn.link-perigo {
+  color: #c0392b;
 }
 
 .expandable-list {

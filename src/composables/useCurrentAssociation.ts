@@ -1,6 +1,6 @@
 import { ref, watch } from "vue";
 import { connectToAssociation } from "../services/database.js";
-import { verifyAssociationPassword, type AssociationSummary } from "../services/config.js";
+import { listAssociations, verifyAssociationPassword, type AssociationSummary } from "../services/config.js";
 import { AssociationModel, type MembershipMode } from "../models/Association.js";
 import { ParcelaModel } from "../models/Parcela.js";
 import { ActivityLogModel } from "../models/ActivityLog.js";
@@ -61,6 +61,17 @@ export const currentMembershipMode = ref<MembershipMode>("UNICO");
  * (`InstitutionalDataEditor.vue`, via `setCurrentAutoRegistrationNumber`).
  */
 export const currentAutoRegistrationNumber = ref(false);
+/**
+ * Número da associação (`associations.numero`, migration `version: 25`) —
+ * prefixo dos códigos legíveis (`src/utils/codigos.ts`). Atualizado ao
+ * conectar e ao salvar os dados institucionais.
+ */
+export const currentAssociationNumero = ref<number | null>(null);
+
+/** Usado pela aba Instituição logo depois de salvar o número da associação. */
+export function setCurrentAssociationNumero(numero: number | null): void {
+  currentAssociationNumero.value = numero;
+}
 
 watch(currentAssociationConfigId, (id) => {
   try {
@@ -101,7 +112,18 @@ export async function selectAssociation(entry: AssociationSummary, password?: st
   // nada pra "gerar" além do calendário de meses em si. Só faz sentido
   // rodar se já existir a linha de `associations` (banco não é mais um
   // arquivo vazio recém-criado).
+  currentAssociationNumero.value = associacoes[0]?.numero ?? null;
+
   if (currentAssociationId.value) {
+    // Banco anterior à migration 25 (ou recém-criado): o número da
+    // associação é a posição dela na lista do config.json — 1ª = 01, 2ª = 02.
+    if (!currentAssociationNumero.value) {
+      const lista = await listAssociations();
+      const posicao = lista.findIndex((a) => a.id === entry.id) + 1;
+      const numero = posicao > 0 ? posicao : 1;
+      await AssociationModel.definirNumeroInicial(currentAssociationId.value, numero);
+      currentAssociationNumero.value = numero;
+    }
     await ParcelaModel.ensureAteMesAtual();
     await ActivityLogModel.registrar({
       module: "SISTEMA",
@@ -131,6 +153,7 @@ export function clearCurrentAssociation(): void {
   currentAssociationConfigId.value = null;
   currentMembershipMode.value = "UNICO";
   currentAutoRegistrationNumber.value = false;
+  currentAssociationNumero.value = null;
   isAssociationConnected.value = false;
 }
 

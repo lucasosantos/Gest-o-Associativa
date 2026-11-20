@@ -2,7 +2,8 @@ import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { CashTransactionModel } from "./CashTransaction.js";
-import { criarReciboDeProtocolo } from "./MembershipPayment.js";
+import { criarReciboDeProtocolo, desfazerBaixaParcial } from "./MembershipPayment.js";
+import { codigoAcordo, codigoLancamento } from "../utils/codigos.js";
 import { formatarCompetencia, formatarMoeda } from "../utils/format.js";
 import { comAtividade } from "./ActivityLog.js";
 
@@ -30,6 +31,8 @@ export interface MembershipAgreement {
   approved_by: string | null;
   notes: string | null;
   created_at: string;
+  /** Nº sequencial do acordo na associação — código `01-0012-AC-0001` (migration `version: 25`). */
+  numero: number | null;
 }
 
 /** Acordo com os dados de exibição do recibo já unidos (sócio, matrícula, meses cobertos). */
@@ -39,6 +42,10 @@ export interface MembershipAgreementComDetalhes extends MembershipAgreement {
   receipt_number: string | null;
   /** Competências (`"AAAA-MM-01"`) cobertas pelo acordo, em ordem. */
   competence_months: string[];
+  /** Código do acordo (`01-0012-AC-0001`). */
+  codigo: string | null;
+  /** Código do lançamento de caixa do acordo (`01-L-2026-000123`). */
+  lancamento_codigo: string | null;
 }
 
 export interface NovoAcordoMensalidade {
@@ -72,6 +79,9 @@ export class MembershipAgreementModel {
   static async criar(memberId: string, dados: NovoAcordoMensalidade): Promise<MembershipAgreementComDetalhes> {
     if (dados.parcela_ids.length === 0) throw new Error("Selecione ao menos uma mensalidade para o acordo.");
     if (dados.negotiated_amount <= 0) throw new Error("Valor negociado deve ser maior que zero.");
+    if (dados.negotiated_amount < dados.parcela_ids.length) {
+      throw new Error("O valor negociado precisa ser de pelo menos R$ 0,01 por mês do acordo.");
+    }
 
     return comAtividade(
       async () => {
@@ -107,6 +117,11 @@ export class MembershipAgreementModel {
 
         let receiptNumber: string | null = null;
         let protocolEntryId: string | null = null;
+        const agreementId = newId();
+        let lancamentoId: string | null = null;
+        let acordoGravado = false;
+        const pagamentosCriados: string[] = [];
+        try {
         if (dados.protocol_book_id) {
           const recibo = await criarReciboDeProtocolo(dados.protocol_book_id, {
             protocolDate: dados.agreement_date,
@@ -118,7 +133,6 @@ export class MembershipAgreementModel {
           protocolEntryId = recibo.protocolEntryId;
         }
 
-        const agreementId = newId();
         const transacao = await CashTransactionModel.create({
           financial_account_id: dados.financial_account_id,
           transaction_type: "RECEITA",
@@ -130,11 +144,13 @@ export class MembershipAgreementModel {
           source_type: "MEMBERSHIP_AGREEMENT",
           source_id: agreementId,
         });
+        lancamentoId = transacao.id;
 
         await db.execute(
           `INSERT INTO membership_agreements
-             (id, association_id, member_id, original_amount, negotiated_amount, agreement_date, approved_by, notes)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+             (id, association_id, member_id, original_amount, negotiated_amount, agreement_date, approved_by, notes, numero)
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8,
+             (SELECT COALESCE(MAX(numero), 0) + 1 FROM membership_agreements WHERE association_id = $2))`,
           [
             agreementId,
             associationId,
@@ -146,6 +162,7 @@ export class MembershipAgreementModel {
             dados.notes ?? null,
           ]
         );
+        acordoGravado = true;
 
         // Rateio em centavos: divisão inteira, sobra de arredondamento absorvida
         // pela última parcela — soma bate exatamente com o valor negociado.
@@ -155,13 +172,15 @@ export class MembershipAgreementModel {
 
         for (let i = 0; i < parcelas.length; i++) {
           const valorParcela = valorBase + (i === parcelas.length - 1 ? sobra : 0);
+          const pagamentoId = newId();
+          pagamentosCriados.push(pagamentoId);
           await db.execute(
             `INSERT INTO membership_payments
                (id, association_id, member_id, parcela_id, cash_transaction_id, paid_amount, paid_at, payment_method,
                 receipt_number, protocol_entry_id, membership_agreement_id)
              VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)`,
             [
-              newId(),
+              pagamentoId,
               associationId,
               memberId,
               parcelas[i].id,
@@ -175,6 +194,15 @@ export class MembershipAgreementModel {
             ]
           );
         }
+        } catch (erro) {
+          // Falhou no meio: desfaz pagamentos, acordo, lançamento e recibo já gravados.
+          await desfazerBaixaParcial({ pagamentos: pagamentosCriados, lancamentoId: null, protocolos: [protocolEntryId] });
+          if (acordoGravado) {
+            await db.execute("DELETE FROM membership_agreements WHERE id = $1", [agreementId]).catch(() => undefined);
+          }
+          if (lancamentoId) await CashTransactionModel.descartarCriadoComErro(lancamentoId).catch(() => undefined);
+          throw erro;
+        }
 
         const criado = await MembershipAgreementModel.get(agreementId);
         if (!criado) throw new Error("Falha ao registrar o acordo.");
@@ -182,9 +210,11 @@ export class MembershipAgreementModel {
       },
       (acordo) => ({
         module: "MENSALIDADES",
-        description: `Acordo de mensalidade — ${acordo.full_name} — ${acordo.competence_months.length} mês(es) — ${formatarMoeda(
-          acordo.negotiated_amount
-        )}${acordo.receipt_number ? ` (recibo ${acordo.receipt_number})` : ""}`,
+        description: `Acordo de mensalidade ${acordo.codigo ?? ""} — ${acordo.full_name} — ${
+          acordo.competence_months.length
+        } mês(es) — ${formatarMoeda(acordo.negotiated_amount)}${acordo.receipt_number ? ` (recibo ${acordo.receipt_number})` : ""}${
+          acordo.lancamento_codigo ? ` — lançamento ${acordo.lancamento_codigo}` : ""
+        }`,
         entity_type: "MEMBER",
         entity_id: memberId,
       })
@@ -194,18 +224,27 @@ export class MembershipAgreementModel {
   /** Acordo com dados de sócio/competências, pra exibir/imprimir o recibo (ver `ImprimirReciboAcordo.vue`). */
   static async get(id: string): Promise<MembershipAgreementComDetalhes | null> {
     const db = await getDatabase();
-    const rows = await db.select<Omit<MembershipAgreementComDetalhes, "competence_months">[]>(
+    const rows = await db.select<
+      (Omit<MembershipAgreementComDetalhes, "competence_months" | "codigo" | "lancamento_codigo"> & {
+        lancamento_ano: number | null;
+        lancamento_numero: number | null;
+      })[]
+    >(
       `SELECT ag.*, pe.full_name AS full_name, m.registration_number AS registration_number,
               (SELECT mp.receipt_number FROM membership_payments mp
-                 WHERE mp.membership_agreement_id = ag.id LIMIT 1) AS receipt_number
+                 WHERE mp.membership_agreement_id = ag.id LIMIT 1) AS receipt_number,
+              (SELECT ct.ano FROM membership_payments mp JOIN cash_transactions ct ON ct.id = mp.cash_transaction_id
+                 WHERE mp.membership_agreement_id = ag.id LIMIT 1) AS lancamento_ano,
+              (SELECT ct.numero FROM membership_payments mp JOIN cash_transactions ct ON ct.id = mp.cash_transaction_id
+                 WHERE mp.membership_agreement_id = ag.id LIMIT 1) AS lancamento_numero
        FROM membership_agreements ag
        JOIN members m ON m.id = ag.member_id
        JOIN people pe ON pe.id = m.person_id
        WHERE ag.id = $1`,
       [id]
     );
-    const acordo = rows[0];
-    if (!acordo) return null;
+    if (!rows[0]) return null;
+    const { lancamento_ano, lancamento_numero, ...acordo } = rows[0];
 
     const parcelas = await db.select<{ competence_month: string }[]>(
       `SELECT pa.competence_month AS competence_month
@@ -216,7 +255,12 @@ export class MembershipAgreementModel {
       [id]
     );
 
-    return { ...acordo, competence_months: parcelas.map((p) => p.competence_month) };
+    return {
+      ...acordo,
+      competence_months: parcelas.map((p) => p.competence_month),
+      codigo: codigoAcordo(acordo.registration_number, acordo.numero),
+      lancamento_codigo: codigoLancamento(lancamento_ano, lancamento_numero),
+    };
   }
 
   /**

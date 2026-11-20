@@ -1,7 +1,7 @@
 import { getDatabase } from "../services/database.js";
 import { newId } from "../services/id.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { CashTransactionModel } from "./CashTransaction.js";
+import { CashTransactionModel, registrarBaixaDeParcela } from "./CashTransaction.js";
 import { gerarParcelasIguais } from "../utils/installments.js";
 import { comAtividade } from "./ActivityLog.js";
 import { formatarMoeda } from "../utils/format.js";
@@ -151,6 +151,7 @@ export class ReceivableModel {
       [installmentId]
     );
     if (!parcela) throw new Error("Parcela não encontrada.");
+    if (parcela.status === "CANCELADA") throw new Error("Esta parcela foi cancelada — não pode receber baixa.");
 
     const receivable = await ReceivableModel.get(parcela.receivable_id);
     if (!receivable) throw new Error("Conta a receber não encontrada.");
@@ -180,20 +181,13 @@ export class ReceivableModel {
           source_id: installmentId,
         });
 
-        await db.execute(
-          `INSERT INTO receivable_payments (id, receivable_installment_id, cash_transaction_id, amount, received_at)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [newId(), installmentId, transacao.id, valorRecebido, dados.payment_date]
-        );
-
-        const novoRecebido = parcela.received_amount + valorRecebido;
-        const quitada = novoRecebido >= parcela.original_amount + parcela.interest_amount - parcela.discount_amount;
-        await db.execute(
-          "UPDATE receivable_installments SET received_amount = $2, status = $3, received_at = $4 WHERE id = $1",
-          [installmentId, novoRecebido, quitada ? "RECEBIDA" : "PARCIAL", quitada ? dados.payment_date : null]
-        );
-
-        await ReceivableModel.refreshStatus(receivable.id);
+        await registrarBaixaDeParcela("RECEBER", {
+          parcelaId: installmentId,
+          contaId: receivable.id,
+          cashTransactionId: transacao.id,
+          amount: valorRecebido,
+          data: dados.payment_date,
+        });
       },
       () => ({
         module: "FINANCEIRO",

@@ -1,12 +1,13 @@
 <script setup lang="ts">
-// "Pagar todas as vencidas": mesmo formulário de MembershipPaymentForm.vue,
-// mas em vez de baixar 1 parcela, chama `MembershipPaymentModel.pagar` uma
-// vez PRA CADA parcela vencida recebida — cada mês continua sendo um
-// pagamento (e um recibo, se um livro for escolhido) independente, exigido
-// pelo schema (`membership_payments` é 1:1 com `parcela_id`, sem baixa
-// parcial). Não é a mesma coisa que "Fazer acordo" (MembershipAgreementForm.vue):
-// aqui cada mês é quitado pelo valor cheio, sem negociar um total único —
-// só poupa o usuário de abrir o formulário de pagamento uma vez por mês.
+// "Pagar todas as vencidas"/selecionadas: mesmo formulário de
+// MembershipPaymentForm.vue, mas quita várias parcelas de uma vez com
+// `MembershipPaymentModel.pagarVarias` — UM lançamento no caixa com o total
+// (como o acordo), e cada mês com seu pagamento (um recibo só pra todos, se um livro
+// for escolhido), exigido pelo schema (`membership_payments` é 1:1 com
+// `parcela_id`). Não é a mesma coisa que "Fazer acordo"
+// (MembershipAgreementForm.vue): aqui cada mês é quitado pelo valor cheio,
+// sem negociar um total. Tudo ou nada: se algum mês já estiver pago, nada é gravado.
+import { useRouter } from "vue-router";
 import { computed, onMounted, ref } from "vue";
 import { MembershipPaymentModel } from "../models/MembershipPayment.js";
 import type { ProtocolBook } from "../models/ProtocolBook.js";
@@ -23,6 +24,7 @@ const props = defineProps<{
   parcelas: { parcela_id: string; competence_month: string }[];
   onSaved?: () => void;
 }>();
+const router = useRouter();
 
 const financialAccountId = ref("");
 const paymentDate = ref(hojeIso());
@@ -35,7 +37,6 @@ const formasPagamento = ref<PaymentMethod[]>([]);
 const livrosRecibo = ref<ProtocolBook[]>([]);
 const loading = ref(true);
 const saving = ref(false);
-const pagas = ref(0);
 const erro = ref("");
 
 const total = computed(() => reaisParaCentavos(amountPerMonth.value) * props.parcelas.length);
@@ -86,32 +87,26 @@ async function handleSubmit() {
 
   saving.value = true;
   erro.value = "";
-  pagas.value = 0;
-  const falhas: string[] = [];
-
-  for (const parcela of props.parcelas) {
-    try {
-      await MembershipPaymentModel.pagar(props.memberId, parcela.parcela_id, {
+  try {
+    const { primeiroPagamentoId } = await MembershipPaymentModel.pagarVarias(
+      props.memberId,
+      props.parcelas.map((parcela) => ({ parcela_id: parcela.parcela_id, amount: valorPago })),
+      {
         financial_account_id: financialAccountId.value,
         payment_date: paymentDate.value,
-        amount: valorPago,
         payment_method_id: paymentMethodId.value || null,
         payment_method_label: formaEscolhida?.name ?? null,
         protocol_book_id: protocolBookId.value || null,
-      });
-      pagas.value++;
-    } catch (error) {
-      falhas.push(`${formatarCompetencia(parcela.competence_month)}: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  saving.value = false;
-  props.onSaved?.();
-
-  if (falhas.length === 0) {
+      }
+    );
+    props.onSaved?.();
     closeModal();
-  } else {
-    erro.value = `Pagas ${pagas.value} de ${props.parcelas.length} mensalidade(s). Falhou: ${falhas.join("; ")}`;
+    // Um recibo só, com todos os meses e o valor total — abre pra imprimir/enviar.
+    router.push({ name: "recibo-imprimir", params: { id: primeiroPagamentoId } });
+  } catch (error) {
+    erro.value = `Não foi possível registrar o pagamento: ${error instanceof Error ? error.message : error}`;
+  } finally {
+    saving.value = false;
   }
 }
 </script>
@@ -123,7 +118,7 @@ async function handleSubmit() {
     <p v-if="erro" class="erro">{{ erro }}</p>
 
     <p class="context">
-      {{ fullName }} — quita <strong>{{ parcelas.length }}</strong> mensalidade(s) vencida(s), cada uma pelo valor cheio:
+      {{ fullName }} — quita <strong>{{ parcelas.length }}</strong> mensalidade(s), cada uma pelo valor cheio, num único lançamento no caixa:
       {{ parcelas.map((p) => formatarCompetencia(p.competence_month)).join(", ") }}
     </p>
 
@@ -167,14 +162,14 @@ async function handleSubmit() {
         <p v-if="livrosRecibo.length === 0" class="field-hint">
           Nenhum livro do tipo RECIBO cadastrado — crie um em Documentos › Protocolos › Livros pra numerar os recibos automaticamente.
         </p>
-        <p v-else class="field-hint">Um recibo numerado é gerado pra CADA mensalidade, em sequência.</p>
+        <p v-else class="field-hint">Gera UM recibo numerado com todos os meses e o valor total.</p>
       </div>
 
       <div class="save-row">
         <button type="button" class="btn-secondary" :disabled="saving" @click="closeModal">Cancelar</button>
         <button type="submit" class="btn-primary" :disabled="saving">
           <Spinner v-if="saving" />
-          {{ saving ? `Pagando ${pagas + 1}/${parcelas.length}...` : "Confirmar pagamentos" }}
+          {{ saving ? "Registrando..." : "Confirmar pagamentos" }}
         </button>
       </div>
     </template>

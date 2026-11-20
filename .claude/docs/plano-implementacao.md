@@ -1521,6 +1521,258 @@ Carteirinha **frente e verso** no tamanho de cartão de crédito (ISO/IEC
   campos), verso com e sem logo e com e sem a assinatura em PNG, e verso
   com frase curta, frase longa (2 linhas), sem frase e sem rodapé.
 
+## Mudança pós-MVP — apagar lançamento estornado ✅ concluída (2026-11-15)
+
+A pedido: lançamento feito por engano às vezes precisa sumir, e não só
+ficar estornado. É a **única exceção** à regra "lançamento não se apaga, se
+estorna" (seção 6 do documento de domínio), e só vale **depois** do estorno.
+Sem migration nova.
+
+- **Onde:** Financeiro → Lançamentos, link "Apagar" (vermelho) na linha
+  `ESTORNADA` e na linha de `ESTORNO` →
+  [CashTransactionDeleteForm.vue](../../src/modals/CashTransactionDeleteForm.vue),
+  com **motivo obrigatório** →
+  `CashTransactionModel.apagarEstornado(id, motivo)`
+  ([CashTransaction.ts](../../src/models/CashTransaction.ts)).
+- **O que apaga:** o **par** (lançamento original + o `ESTORNO` dele), a
+  linha de `cash_transaction_reversals` e os `document_links` do lançamento
+  (o documento continua em Documentos). Como os dois se anulavam, **o
+  saldo da conta não muda**. `id` pode ser de qualquer um dos dois.
+- **Bloqueado** (com mensagem dizendo o porquê) se o original ou o estorno
+  estiver ligado a `membership_payments`, `payable_payments`,
+  `receivable_payments`, `donations` ou `asset_events`: o pagamento ou
+  evento ficaria sem lançamento (e a FK barraria o `DELETE` de qualquer
+  jeito). Para esses, o estorno continua sendo o caminho.
+- **Histórico:** uma linha em Atividades (módulo Financeiro, imutável), sem
+  `entity_id`, porque o lançamento deixa de existir. Exemplo: "Lançamento
+  estornado apagado — Venda de rifa — R$ 50,00 (receita, conta Caixa,
+  lançado em 10/11/2026, estornado em 12/11/2026, motivo do estorno: …) —
+  motivo da exclusão: lançado na conta errada".
+- **Sem transação SQL** (o projeto não usa; o `tauri-plugin-sql` trabalha
+  com pool). A ordem garante que nenhum passo intermediário mexa no saldo:
+  1º um único `UPDATE` põe os dois como `CANCELADA` (saldo, extrato e
+  prestação de contas só somam `CONFIRMADA`/`ESTORNADA`, e o par se
+  anulava); depois os `DELETE`s. Se falhar no meio, sobra um par
+  `CANCELADA` fora das contas, que pode ser apagado de novo pelo botão (ele
+  aparece na linha de `ESTORNO`). `CANCELADA` não era usado por nenhum
+  outro fluxo de lançamento.
+- **Validado** com as 24 migrations reais num SQLite em memória com
+  `PRAGMA foreign_keys = ON`: receita estornada apagada pelo original e
+  despesa apagada pela linha de estorno (saldo igual antes e depois),
+  retomada a partir do par `CANCELADA`, bloqueio de lançamento de
+  mensalidade (nada apagado), e confirmação de que a FK também barraria o
+  `DELETE` direto.
+
+## Correção — estorno de pagamento de mensalidade reabre as mensalidades ✅ concluída (2026-11-15)
+
+**Bug relatado:** pagamento de um acordo com várias parcelas foi estornado
+no Financeiro, mas as mensalidades continuaram como **pagas**. Causa: a
+situação "paga" é só a existência da linha em `membership_payments`
+(`MembershipPaymentModel.buscarLinhas`), e `CashTransactionModel.reverse`
+só mexia no caixa. As mensalidades ficavam "pagas" sem dinheiro, e o
+`UNIQUE(member_id, parcela_id)` nem deixava pagá-las de novo.
+
+- **Correção:** `reverse` agora chama `desfazerMensalidadesDoLancamento`
+  ([CashTransaction.ts](../../src/models/CashTransaction.ts)) no mesmo
+  `comAtividade`: apaga as linhas de `membership_payments` daquele
+  lançamento (avulso = 1, acordo = uma por parcela, todas com o mesmo
+  `cash_transaction_id`), apaga o `membership_agreements` que ficou sem
+  parcela e marca o recibo (`protocol_entries`) como `CANCELADO`, que
+  continua no livro com o número. A linha de Atividades do estorno lista
+  sócio, meses reabertos, acordo desfeito e recibo cancelado. SQL direto,
+  sem `MembershipPaymentModel`, porque aquele model importa este (import
+  circular).
+- **Lançamentos estornados ANTES da correção:** botão **"Reabrir
+  mensalidades"** na linha `ESTORNADA` que ainda quita mensalidade
+  (`CashTransactionModel.reabrirMensalidades`, atividade no módulo
+  Mensalidades). **Não** virou migration automática: quem estornou pode ter
+  relançado o valor à mão e querer a mensalidade paga, então a decisão fica
+  com o usuário, caso a caso.
+- **Financeiro:** a lista de lançamentos traz `membership_payment_count`
+  (subconsulta em `SELECT_COM_NOMES`); a confirmação do estorno avisa
+  quantas mensalidades vão reabrir. Depois de reabertas, o lançamento deixa
+  de estar ligado a mensalidade e pode ser **apagado** (seção anterior).
+- **Fora do escopo (mesmo padrão, não pedido):** estornar o lançamento de
+  baixa de conta a pagar/receber, doação ou evento de patrimônio também só
+  mexe no caixa; a parcela ou o registro continua quitado.
+- **Validado** com as 24 migrations reais (SQLite em memória, FKs ligadas):
+  acordo de 3 mensalidades com recibo estornado → 3 reabertas, acordo
+  apagado, recibo `CANCELADO`, saldo devolvido; mensalidade reaberta aceita
+  pagamento novo; lançamento do acordo depois pode ser apagado com saldo
+  igual.
+
+- **Atualização (mesmo dia) — estorno desfaz TUDO o que o lançamento quitava:**
+  `desfazerMensalidadesDoLancamento` virou parte de `desfazerQuitacoesDoLancamento`,
+  que também recalcula a parcela de conta a pagar/receber pela soma dos
+  pagamentos restantes (e a situação da conta), desfaz a doação e tira o
+  vínculo do evento de patrimônio (o evento continua na linha do tempo do
+  bem). O botão "Reabrir mensalidades" virou **"Desfazer baixas"**
+  (`CashTransactionModel.desfazerBaixas`), e a lista traz `quitacoes_count`
+  (contagem nas 5 tabelas de vínculo). O item "Fora do escopo" acima deixou
+  de valer.
+
+## Mudança pós-MVP — reset de mensalidades, lançamento único, todas as contas, renomear conta ✅ concluída (2026-11-15)
+
+- **Resetar mensalidades do sócio** (aba Mensalidades da ficha → "Resetar
+  mensalidades", `MembershipResetForm.vue`): justificativa obrigatória; mostra
+  antes o resumo (`MembershipPaymentModel.resumoReset`). `resetarDoSocio`
+  ESTORNA cada lançamento confirmado ligado (o caixa fica coerente),
+  desfaz as baixas de lançamento já estornado e apaga pagamento antigo sem
+  lançamento. Para antes de mexer em qualquer coisa se algum lançamento
+  também pagar mensalidade de outro sócio. Uma linha só em Atividades.
+- **Várias mensalidades sem acordo = UM lançamento** (`pagarVarias`, usado
+  por "pagar selecionadas/vencidas" e "pagar adiantado"): total num
+  lançamento só, cada mês com sua linha em `membership_payments` (mesmo
+  `cash_transaction_id`) e seu recibo. Checagem tudo-ou-nada antes de gravar.
+- **Lançamentos de todas as contas juntos:** opção "Todas as contas"
+  (padrão) na aba Lançamentos, coluna Conta e saldo somado; o formulário de
+  lançamento ganhou o seletor de conta.
+- **Renomear conta** com motivo (`FinancialAccountModel.renomear`,
+  `FinancialAccountRenameForm.vue`): nome antigo, novo e motivo em Atividades.
+
+## Revisão do financeiro — códigos legíveis, saldo após cada lançamento e verificação de consistência ✅ concluída (2026-11-15)
+
+**Pedido:** o sistema instalado na associação ficou inconsistente (saldo
+que não bate, mensalidades pagas sem dinheiro no caixa, lançamentos
+duplicados); uma ação = um lançamento; estorno de mensalidade/acordo reabre
+os meses; um código legível pra ligar mensalidade ↔ acordo ↔ lançamento;
+saldo depois de cada lançamento na lista e nos relatórios.
+
+**Causas encontradas na revisão:**
+- estornos feitos antes da correção acima deixaram mensalidades/parcelas
+  presas a lançamento `ESTORNADA` ("pagas sem dinheiro");
+- `pagar`, acordo, `pagarVarias`, baixa de parcela, doação e eventos de
+  patrimônio criavam o lançamento ANTES do registro ligado — se o passo
+  seguinte falhasse (ex.: `UNIQUE` do mês já pago), sobrava a receita no
+  caixa sem nada pago e o usuário pagava de novo (**duplicado**). O plugin
+  SQL usa pool de conexões, então não há transação;
+- estornar UMA perna de transferência criava/sumia dinheiro no total; estorno
+  interrompido no meio deixava `ESTORNADA` sem estorno (ou estorno sem
+  ligação, que vale 0 no saldo);
+- `hojeIso()` era UTC: depois das 21h o pagamento/estorno saía com a data de
+  amanhã (no último dia do mês, caía no mês seguinte) e a mensalidade
+  aparecia vencida um dia antes;
+- prestação de contas somava transferência e estorno como entrada/saída;
+- pagamento adiantado criava meses futuros e `ensureAteMesAtual` saía cedo
+  (o mês atual podia ficar sem parcela — ninguém devia aquele mês).
+
+**Correções:**
+- **Ordem segura + desfazer em caso de erro:** checagens antes de gravar;
+  `desfazerBaixaParcial` (MembershipPayment.ts), `registrarBaixaDeParcela`
+  e `CashTransactionModel.descartarCriadoComErro` apagam o que a ação acabou
+  de gravar se um passo falha (o recibo emitido fica `CANCELADO`). Estorno
+  (`estornarUm`): ESTORNO → ligação → original `ESTORNADA` → baixas.
+- **Transferência estorna as duas pernas juntas** (`reverse` pelo
+  `transfer_group_id`; perna já estornada fica de fora); "Apagar" apaga os
+  dois pares. Lançamento `CANCELADA` sem ligação (sobra de exclusão
+  interrompida) pode ser apagado.
+- `hojeIso()` passou a ser a data local (= `hojeLocalIso`); telas de
+  impressão usam `hojeIso()` em vez de `toISOString()`.
+- Parcela de conta: recusa parcela `CANCELADA`; valor pago recalculado pela
+  SOMA dos pagamentos (`recalcularParcelaPelaSoma`).
+- Acordo exige ao menos R$ 0,01 por mês; adiantado valida antes de criar meses.
+- `ensureAteMesAtual` cria todo mês faltante entre o 1º do calendário e o
+  atual; `buscarLinhas` só mostra mês futuro pra quem já o pagou.
+- Prestação de contas (`totaisDoPeriodo`): transferência fora de
+  entradas/saídas (mostrada à parte), estorno abate do lado do original.
+
+**Migration `version: 25` — códigos legíveis** (`src/utils/codigos.ts`):
+- `associations.numero` (o "01"): NULL na migration, preenchido ao abrir a
+  associação com a posição dela na lista do `config.json`; editável na aba
+  Instituição ("Códigos").
+- `cash_transactions.ano` + `numero` → lançamento `01-L-2026-000123`;
+  `membership_agreements.numero` → acordo `01-0012-AC-0001`. Backfill em
+  ordem de data/criação; índices únicos; novos registros pegam `MAX + 1` no
+  próprio INSERT (`inserirLancamento` — todo INSERT de lançamento passa por ali).
+- Mensalidade `01-0012-03-2026` é **calculada** (sócio + competência), não gravada.
+- Onde aparece: Financeiro (coluna Nº com link "o que este lançamento
+  quita" — `CashTransactionLinksModal.vue`/`vinculos()`, busca por código),
+  Cobranças, aba Mensalidades e relatório financeiro do sócio (código do mês
+  e do lançamento que o pagou), recibos, extrato, prestação de contas e as
+  descrições novas em Atividades.
+
+**Saldo após cada lançamento:** `saldo_apos` em `list`/`listByAccount`
+(window function: saldo inicial + soma acumulada por data/criação/id —
+da conta, ou de todas as contas somadas); extrato e prestação de contas
+(tela e impressão) com coluna "Saldo após" (`saldosApos`,
+`CashTransactionModel.saldoTotalAntes`).
+
+**Verificar consistência** (Financeiro → sidebar, `ConsistenciaModel` +
+`ConsistenciaForm.vue`): lista, por grupo, estornado ainda quitando
+registros, estornado sem estorno, estorno solto, estorno sem o original
+marcado, transferência pela metade, lançamento de mensalidade/conta/doação
+sem o registro (sobra de falha), possíveis duplicados (mesma conta, tipo,
+valor, data e descrição — nunca quando os dois quitam registros diferentes),
+mensalidade paga sem lançamento, parcela com valor pago divergente,
+cancelado sobrando e mês faltando. Nada é automático: o usuário marca, dá o
+motivo e cada correção vira uma linha em Atividades. Recomenda backup antes.
+
+- **Validado** com as 25 migrations reais (SQLite em memória, FKs ligadas):
+  backfill e numeração por ano, índice único, saldo após = saldo atual na
+  linha mais nova (conta e todas), estorno de transferência mantém o total,
+  cada caso "estragado" é achado pela consulta certa (sem falso positivo de
+  dois sócios pagando o mesmo valor no mesmo dia) e as correções deixam o
+  saldo coerente; testes anteriores (apagar, baixas, pagarVarias/reset) seguem passando.
+
+## Mudança pós-MVP — mensalidade paga com prestação de serviço ✅ concluída (2026-11-17)
+
+**Pedido:** o sócio paga mensalidades prestando um serviço à associação; o
+usuário informa quantos meses o serviço vale, explica em texto como foi e
+pode anexar um relatório em PDF.
+
+- **Migration `version: 26`:** tabela `membership_services` (sócio, nº
+  sequencial, data, meses, texto do serviço obrigatório, aprovado por,
+  `reference_amount` = valor mensal × meses só como referência, e
+  `document_id` do PDF) + `membership_payments.membership_service_id`.
+- **Sem dinheiro, sem caixa:** cada mês quitado é uma linha normal em
+  `membership_payments` com `cash_transaction_id` NULL, `payment_method`
+  "Prestação de serviço" e o vínculo com a prestação. A verificação de
+  consistência não trata esses meses como "pagos sem dinheiro".
+- **Meses quitados** (`MembershipServiceModel.mesesDisponiveis`/`mesesAQuitar`):
+  os em aberto do sócio (desde a filiação, vencidos primeiro), a partir do
+  mês escolhido, pulando os já pagos; se faltar, segue pros meses futuros
+  (até 36 à frente, criando a parcela como o pagamento adiantado).
+- **PDF:** vira documento comum (Documentos), vinculado ao sócio; é gravado
+  primeiro (passo que mais falha). Se algo falhar depois, pagamentos e a
+  prestação são desfeitos e o documento fica `CANCELADO`.
+- **Código:** `01-0012-PS-0001` (`codigoServico`), mostrado no selo "via
+  serviço" da aba Mensalidades (abre o detalhe: texto, meses, abrir PDF,
+  **Desfazer** com motivo), em Cobranças e no relatório financeiro do sócio.
+- **Telas:** botão "Pagar com prestação de serviço" na aba Mensalidades
+  (`MembershipServicePaymentForm.vue`), detalhe em `MembershipServiceDetail.vue`.
+  O reset de mensalidades também apaga a prestação que ficou sem mês.
+- **Nos relatórios:** a prestação de contas (prévia em Financeiro → Relatórios
+  e `ImprimirPrestacaoContas.vue`) tem uma seção "Mensalidades pagas com
+  prestação de serviço" (`MembershipServiceModel.listarPorPeriodo`, pela data
+  do serviço): código, sócio, serviço, meses, mensalidade e valor do serviço
+  (meses × mensalidade = `reference_amount`), com total — fora de
+  entradas/saídas e do saldo. No relatório financeiro do sócio, "Total pago"
+  passa a ser só o pago em dinheiro e o pago com serviço tem total próprio
+  (`totais.viaServico`/`valorServico`).
+- **Valor da mensalidade informado no formulário** (campo obrigatório,
+  sugerido pelo valor da associação/plano): sem valor configurado, as
+  prestações eram gravadas com R$ 0,00. As já gravadas podem ser corrigidas no
+  detalhe da prestação ("Informar/Corrigir valor" →
+  `MembershipServiceModel.alterarValorMensal`, atualiza `paid_amount` dos meses
+  e `reference_amount`, registra em Atividades).
+- **Validado** com as 26 migrations reais (SQLite em memória): meses em
+  aberto desde a filiação pulando o já pago, numeração, consistência sem
+  falso positivo, desfazer e limpeza do reset.
+
+## Mudança pós-MVP — um recibo só pra vários meses ✅ concluída (2026-11-20)
+
+- `MembershipPaymentModel.pagarVarias` (pagamento em lote e adiantado) emite
+  UM recibo (uma entrada de protocolo) com todos os meses e o valor total;
+  todas as linhas de `membership_payments` do pagamento apontam pro mesmo
+  `protocol_entry_id`/`receipt_number`. Devolve o 1º pagamento e o formulário
+  abre o recibo na hora (como no pagamento de um mês).
+- `MembershipPaymentModel.recibo(id)` junta os meses do mesmo recibo (ou, sem
+  livro de recibo, do mesmo lançamento); `ImprimirRecibo.vue` mostra o total,
+  os meses e uma tabela mês/código/valor. Recibos antigos (um por mês) seguem
+  saindo um por mês.
+- Acordo já emitia um recibo só (`ImprimirReciboAcordo.vue`) — sem mudança.
+- Estorno/reset já cancelam recibo compartilhado uma vez só (Set/NOT EXISTS).
+
 ## Fase 2 (bloco resumido, pós-MVP)
 
 Cada item vira sua própria migration (`version: 14, 15, ...`), model e view:

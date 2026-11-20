@@ -1,9 +1,12 @@
 <script setup lang="ts">
-// Lançamento manual de receita ou despesa numa conta específica.
+// Lançamento manual de receita ou despesa. A conta vem pré-escolhida
+// (`accountId`, a conta filtrada na aba Lançamentos) e pode ser trocada —
+// com "Todas as contas" na aba, `accountId` vem vazio e vale a primeira.
 // Transferências entre contas usam TransferForm.vue; estornos são feitos
 // direto na lista (CashTransactionModel.reverse), sem formulário próprio.
 import { computed, onMounted, ref } from "vue";
 import { CashTransactionModel } from "../models/CashTransaction.js";
+import { FinancialAccountModel, type FinancialAccountComSaldo } from "../models/FinancialAccount.js";
 import { FinancialCategoryModel, type FinancialCategory } from "../models/FinancialCategory.js";
 import { CostCenterModel, type CostCenter } from "../models/CostCenter.js";
 import { PaymentMethodModel, type PaymentMethod } from "../models/PaymentMethod.js";
@@ -12,10 +15,13 @@ import { closeModal } from "../composables/useModal.js";
 import Spinner from "../components/Spinner.vue";
 
 const props = defineProps<{
-  accountId: string;
+  /** Conta pré-escolhida; vazio = a primeira da lista. */
+  accountId?: string;
   onSaved?: () => void;
 }>();
 
+const contaId = ref(props.accountId ?? "");
+const contas = ref<FinancialAccountComSaldo[]>([]);
 const transactionType = ref<"RECEITA" | "DESPESA">("RECEITA");
 const amount = ref(0);
 const transactionDate = ref(hojeIso());
@@ -38,11 +44,14 @@ const categoriasFiltradas = computed(() =>
 
 onMounted(async () => {
   try {
-    const [c, cc, pm] = await Promise.all([
+    const [c, cc, pm, listaContas] = await Promise.all([
       FinancialCategoryModel.list(),
       CostCenterModel.list(),
       PaymentMethodModel.list(),
+      FinancialAccountModel.list(),
     ]);
+    contas.value = listaContas;
+    if (!listaContas.some((conta) => conta.id === contaId.value)) contaId.value = listaContas[0]?.id ?? "";
     categorias.value = c;
     centrosCusto.value = cc;
     formasPagamento.value = pm;
@@ -52,6 +61,10 @@ onMounted(async () => {
 });
 
 async function handleSubmit() {
+  if (!contaId.value) {
+    erro.value = "Escolha a conta.";
+    return;
+  }
   if (!description.value.trim() || amount.value <= 0) {
     erro.value = "Informe a descrição e um valor maior que zero.";
     return;
@@ -61,7 +74,7 @@ async function handleSubmit() {
   erro.value = "";
   try {
     await CashTransactionModel.create({
-      financial_account_id: props.accountId,
+      financial_account_id: contaId.value,
       transaction_type: transactionType.value,
       amount: reaisParaCentavos(amount.value),
       transaction_date: transactionDate.value,
@@ -87,6 +100,13 @@ async function handleSubmit() {
 
   <form v-else class="transaction-form" @submit.prevent="handleSubmit">
     <p v-if="erro" class="erro">{{ erro }}</p>
+
+    <div class="field">
+      <label class="field-label" for="conta">Conta *</label>
+      <select id="conta" v-model="contaId" :disabled="saving" required>
+        <option v-for="conta in contas" :key="conta.id" :value="conta.id">{{ conta.name }}</option>
+      </select>
+    </div>
 
     <div class="field">
       <label class="field-label" for="transaction-type">Tipo</label>

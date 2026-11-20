@@ -176,10 +176,18 @@ onMounted(async () => {
             <span class="rotulo">Mensalidades pagas</span>
             <strong>{{ relatorio.totais.pagas }} de {{ relatorio.totais.meses }}</strong>
             <span v-if="relatorio.totais.viaAcordo" class="detalhe">{{ relatorio.totais.viaAcordo }} via acordo</span>
+            <span v-if="relatorio.totais.viaServico" class="detalhe">
+              {{ relatorio.totais.viaServico }} com prestação de serviço
+            </span>
           </div>
           <div class="bloco">
-            <span class="rotulo">Total pago</span>
+            <span class="rotulo">Total pago em dinheiro</span>
             <strong>{{ formatarMoeda(relatorio.totais.valorPago) }}</strong>
+          </div>
+          <div v-if="relatorio.totais.viaServico" class="bloco">
+            <span class="rotulo">Pago com serviço</span>
+            <strong>{{ formatarMoeda(relatorio.totais.valorServico) }}</strong>
+            <span class="detalhe">{{ relatorio.totais.viaServico }} mês(es) × mensalidade — sem caixa</span>
           </div>
           <div class="bloco">
             <span class="rotulo">Vencidas sem pagamento</span>
@@ -201,33 +209,49 @@ onMounted(async () => {
         <table v-else class="tabela-impressao">
           <thead>
             <tr>
+              <th>Código</th>
               <th>Competência</th>
               <th>Vencimento</th>
               <th>Situação</th>
               <th>Pago em</th>
               <th>Forma</th>
-              <th>Recibo</th>
+              <th>Recibo / lançamento</th>
               <th class="col-valor">Valor pago</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="linha in relatorio.linhas" :key="linha.parcela_id" :class="`status-${linha.status}`">
+              <td class="nao-quebrar">{{ linha.codigo }}</td>
               <td class="nao-quebrar">{{ formatarCompetencia(linha.competence_month) }}</td>
               <td class="nao-quebrar">{{ formatarData(linha.due_date) }}</td>
               <td class="nao-quebrar">
                 {{ STATUS_LABEL[linha.status] }}
                 <span v-if="linha.membership_agreement_id" class="detalhe">via acordo</span>
+                <span v-if="linha.membership_service_id" class="detalhe">
+                  via prestação de serviço{{ linha.servico_codigo ? ` ${linha.servico_codigo}` : "" }}
+                </span>
               </td>
               <td class="nao-quebrar">{{ linha.paid_at ? formatarData(linha.paid_at) : "—" }}</td>
               <td>{{ linha.payment_method || "—" }}</td>
-              <td class="nao-quebrar">{{ linha.receipt_number || "—" }}</td>
+              <td class="nao-quebrar">
+                {{ linha.receipt_number || "—" }}
+                <span v-if="linha.lancamento_codigo" class="detalhe">{{ linha.lancamento_codigo }}</span>
+              </td>
               <td class="col-valor nao-quebrar">{{ linha.paid_amount != null ? formatarMoeda(linha.paid_amount) : "—" }}</td>
             </tr>
           </tbody>
           <tfoot>
             <tr class="linha-total">
-              <td colspan="6">Total pago no período — {{ relatorio.totais.pagas }} mensalidade(s)</td>
+              <td colspan="7">
+                Total pago em dinheiro no período — {{ relatorio.totais.pagas - relatorio.totais.viaServico }} mensalidade(s)
+              </td>
               <td class="col-valor nao-quebrar">{{ formatarMoeda(relatorio.totais.valorPago) }}</td>
+            </tr>
+            <tr v-if="relatorio.totais.viaServico" class="linha-total">
+              <td colspan="7">
+                Pago com prestação de serviço — {{ relatorio.totais.viaServico }} mês(es) × mensalidade (não entrou no caixa)
+              </td>
+              <td class="col-valor nao-quebrar">{{ formatarMoeda(relatorio.totais.valorServico) }}</td>
             </tr>
           </tfoot>
         </table>

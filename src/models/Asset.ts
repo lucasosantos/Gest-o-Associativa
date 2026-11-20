@@ -340,14 +340,20 @@ export class AssetModel {
         const partes = [ROTULO_ORIGEM[dados.acquisition_origin]];
         if (dados.acquisition_source) partes.push(`de ${dados.acquisition_source}`);
         if (dados.location) partes.push(`local: ${dados.location}`);
-        await AssetModel.inserirEvento(db, {
-          asset_id: id,
-          event_type: "AQUISICAO",
-          event_date: dados.acquisition_date,
-          description: partes.join(" — "),
-          amount: dados.acquisition_value ?? null,
-          cash_transaction_id: cashTransactionId,
-        });
+        try {
+          await AssetModel.inserirEvento(db, {
+            asset_id: id,
+            event_type: "AQUISICAO",
+            event_date: dados.acquisition_date,
+            description: partes.join(" — "),
+            amount: dados.acquisition_value ?? null,
+            cash_transaction_id: cashTransactionId,
+          });
+        } catch (erro) {
+          // Sem o evento, o lançamento ficaria solto no caixa — desfaz.
+          if (cashTransactionId) await CashTransactionModel.descartarCriadoComErro(cashTransactionId).catch(() => undefined);
+          throw erro;
+        }
 
         const criado = await AssetModel.get(id);
         if (!criado) throw new Error("Falha ao cadastrar o bem.");
@@ -470,14 +476,20 @@ export class AssetModel {
           cashTransactionId = transacao.id;
         }
 
-        await AssetModel.inserirEvento(db, {
-          asset_id: assetId,
-          event_type: dados.event_type,
-          event_date: dados.event_date,
-          description: dados.description.trim(),
-          amount: dados.amount ?? null,
-          cash_transaction_id: cashTransactionId,
-        });
+        try {
+          await AssetModel.inserirEvento(db, {
+            asset_id: assetId,
+            event_type: dados.event_type,
+            event_date: dados.event_date,
+            description: dados.description.trim(),
+            amount: dados.amount ?? null,
+            cash_transaction_id: cashTransactionId,
+          });
+        } catch (erro) {
+          // Sem o evento, o lançamento ficaria solto no caixa — desfaz.
+          if (cashTransactionId) await CashTransactionModel.descartarCriadoComErro(cashTransactionId).catch(() => undefined);
+          throw erro;
+        }
       },
       () => ({
         module: "PATRIMONIO",
@@ -537,14 +549,20 @@ export class AssetModel {
         const partes = [ROTULO_TIPO_BAIXA[dados.disposal_type]];
         if (dados.disposal_recipient) partes.push(`para ${dados.disposal_recipient}`);
         partes.push(`motivo: ${dados.disposal_reason.trim()}`);
-        await AssetModel.inserirEvento(db, {
-          asset_id: assetId,
-          event_type: "BAIXA",
-          event_date: dados.disposal_date,
-          description: partes.join(" — "),
-          amount: valor,
-          cash_transaction_id: cashTransactionId,
-        });
+        try {
+          await AssetModel.inserirEvento(db, {
+            asset_id: assetId,
+            event_type: "BAIXA",
+            event_date: dados.disposal_date,
+            description: partes.join(" — "),
+            amount: valor,
+            cash_transaction_id: cashTransactionId,
+          });
+        } catch (erro) {
+          // Sem o evento, o lançamento ficaria solto no caixa — desfaz.
+          if (cashTransactionId) await CashTransactionModel.descartarCriadoComErro(cashTransactionId).catch(() => undefined);
+          throw erro;
+        }
       },
       () => ({
         module: "PATRIMONIO",

@@ -100,7 +100,7 @@ export class FinancialAccountModel {
         await db.execute(
           `INSERT INTO financial_accounts
              (id, association_id, name, account_type, bank_name, agency, account_number_masked, opening_balance, opening_date)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, date('now')))`,
+           VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9, date('now', 'localtime')))`,
           [
             id,
             associationId,
@@ -146,6 +146,48 @@ export class FinancialAccountModel {
   }
 
   /**
+   * Troca o nome da conta, com motivo obrigatório que vai pra Atividades
+   * junto com o nome antigo (o `update` genérico não registra nenhum dos
+   * dois). Lançamentos ligam pela conta (`financial_account_id`), não pelo
+   * nome — extratos e relatórios passam a mostrar o nome novo sozinhos.
+   * Nome repetido na associação é barrado com mensagem clara (a tabela tem
+   * `UNIQUE(association_id, name)`, que barraria de qualquer jeito).
+   */
+  static async renomear(id: string, novoNome: string, motivo: string): Promise<void> {
+    const nome = novoNome.trim();
+    const justificativa = motivo.trim();
+    if (!nome) throw new Error("Informe o novo nome da conta.");
+    if (!justificativa) throw new Error("Informe o motivo da troca de nome.");
+
+    const db = await getDatabase();
+    const [atual] = await db.select<{ name: string; association_id: string }[]>(
+      "SELECT name, association_id FROM financial_accounts WHERE id = $1",
+      [id]
+    );
+    if (!atual) throw new Error("Conta financeira não encontrada.");
+    if (atual.association_id !== getCurrentAssociationId()) {
+      throw new Error("Esta conta não pertence à associação ativa.");
+    }
+    if (atual.name === nome) throw new Error("O nome não mudou.");
+
+    const [{ total }] = await db.select<{ total: number }[]>(
+      "SELECT COUNT(*) AS total FROM financial_accounts WHERE association_id = $1 AND name = $2 AND id <> $3",
+      [atual.association_id, nome, id]
+    );
+    if (total > 0) throw new Error(`Já existe uma conta chamada "${nome}".`);
+
+    await comAtividade(
+      async () => {
+        await db.execute("UPDATE financial_accounts SET name = $2 WHERE id = $1", [id, nome]);
+      },
+      () => ({
+        module: "FINANCEIRO",
+        description: `Conta financeira renomeada — "${atual.name}" → "${nome}" — motivo: ${justificativa}`,
+      })
+    );
+  }
+
+  /**
    * Saldo inicial (`opening_balance` + tudo confirmado ANTES de `dataInicio`),
    * movimentos do período e saldo final — mesma lógica de sinal do saldo
    * atual (`SELECT_COM_SALDO`), só filtrada por data em vez de somar tudo.
@@ -170,9 +212,10 @@ export class FinancialAccountModel {
     );
 
     const movimentos = await db.select<MovimentoExtrato[]>(
-      `SELECT t.*, fc.name AS category_name, cc.name AS cost_center_name, pm.name AS payment_method_name,
-              (${SINAL_LANCAMENTO_SQL}) AS signed_amount
+      `SELECT t.*, fa.name AS account_name, fc.name AS category_name, cc.name AS cost_center_name,
+              pm.name AS payment_method_name, (${SINAL_LANCAMENTO_SQL}) AS signed_amount
        FROM cash_transactions t
+       JOIN financial_accounts fa ON fa.id = t.financial_account_id
        LEFT JOIN financial_categories fc ON fc.id = t.financial_category_id
        LEFT JOIN cost_centers cc ON cc.id = t.cost_center_id
        LEFT JOIN payment_methods pm ON pm.id = t.payment_method_id
@@ -180,13 +223,15 @@ export class FinancialAccountModel {
        LEFT JOIN cash_transactions o ON o.id = r.original_transaction_id
        WHERE t.financial_account_id = $1 AND t.status IN ('CONFIRMADA', 'ESTORNADA')
          AND t.transaction_date BETWEEN $2 AND $3
-       ORDER BY t.transaction_date, t.created_at`,
+       ORDER BY t.transaction_date, t.created_at, t.id`,
       [accountId, dataInicio, dataFim]
     );
 
     const saldoInicial = conta.opening_balance + (soma_anterior ?? 0);
-    const somaPeriodo = movimentos.reduce((total, m) => total + m.signed_amount, 0);
+    // Saldo da conta logo depois de cada movimento (coluna "Saldo após").
+    let saldo = saldoInicial;
+    const comSaldo = movimentos.map((m) => ({ ...m, saldo_apos: (saldo += m.signed_amount) }));
 
-    return { saldo_inicial: saldoInicial, movimentos, saldo_final: saldoInicial + somaPeriodo };
+    return { saldo_inicial: saldoInicial, movimentos: comSaldo, saldo_final: saldo };
   }
 }

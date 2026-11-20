@@ -12,7 +12,7 @@ import { MembershipAgreementModel, type MembershipAgreementComDetalhes } from ".
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { formatarData, formatarMoeda, formatarCompetencia } from "../utils/format.js";
+import { formatarData, formatarMoeda, formatarCompetencia, hojeIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
@@ -25,7 +25,7 @@ const associacao = ref<Association | null>(null);
 const endereco = ref<Address | null>(null);
 const loading = ref(true);
 
-const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
+const dataEmissao = computed(() => formatarData(hojeIso()));
 const mesesTexto = computed(() => acordo.value?.competence_months.map(formatarCompetencia).join(", ") ?? "");
 const desconto = computed(() => (acordo.value ? acordo.value.original_amount - acordo.value.negotiated_amount : 0));
 
@@ -85,6 +85,10 @@ onMounted(async () => {
           <dd v-if="desconto > 0">{{ formatarMoeda(desconto) }}</dd>
           <dt v-if="acordo.approved_by">Aprovado por</dt>
           <dd v-if="acordo.approved_by">{{ acordo.approved_by }}</dd>
+          <dt v-if="acordo.codigo">Código do acordo</dt>
+          <dd v-if="acordo.codigo">{{ acordo.codigo }}</dd>
+          <dt v-if="acordo.lancamento_codigo">Lançamento no caixa</dt>
+          <dd v-if="acordo.lancamento_codigo">{{ acordo.lancamento_codigo }}</dd>
         </dl>
 
         <p class="local-data">Emitido em {{ dataEmissao }}</p>

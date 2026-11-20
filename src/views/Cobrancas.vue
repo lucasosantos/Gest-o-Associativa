@@ -110,17 +110,19 @@ useAssociationScopedData(() => {
       <table class="data-table">
         <thead>
           <tr>
+            <th>Código</th>
             <th>Sócio</th>
             <th>Matrícula</th>
             <th>Competência</th>
             <th>Vencimento</th>
             <th>Situação</th>
-            <th>Recibo</th>
+            <th>Recibo / lançamento</th>
             <th></th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="linha in linhas" :key="`${linha.member_id}-${linha.parcela_id}`">
+            <td class="codigo">{{ linha.codigo }}</td>
             <td>{{ linha.full_name }}</td>
             <td>{{ linha.registration_number }}</td>
             <td>{{ formatarCompetencia(linha.competence_month) }}</td>
@@ -128,8 +130,16 @@ useAssociationScopedData(() => {
             <td>
               {{ STATUS_LABEL[linha.status] }}
               <span v-if="linha.status === 'PAGO' && linha.paid_amount != null"> — {{ formatarMoeda(linha.paid_amount) }}</span>
+              <span v-if="linha.membership_service_id" class="codigo-lancamento">
+                prestação de serviço{{ linha.servico_codigo ? ` ${linha.servico_codigo}` : "" }}
+              </span>
             </td>
-            <td>{{ linha.receipt_number ?? "—" }}</td>
+            <td>
+              {{ linha.receipt_number ?? "—" }}
+              <span v-if="linha.lancamento_codigo" class="codigo-lancamento" title="Lançamento de caixa que pagou este mês">
+                {{ linha.lancamento_codigo }}
+              </span>
+            </td>
             <td>
               <button v-if="linha.status !== 'PAGO'" type="button" class="link-btn" @click="abrirBaixa(linha)">
                 Pagar
@@ -153,6 +163,20 @@ useAssociationScopedData(() => {
 </template>
 
 <style scoped>
+.codigo {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.codigo-lancamento {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .filter-row {
   display: flex;
   gap: 1.25rem;

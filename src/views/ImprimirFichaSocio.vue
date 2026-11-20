@@ -1,6 +1,7 @@
 <script setup lang="ts">
 // Ficha cadastral do sócio pra impressão — os mesmos campos da aba Dados
 // da ficha (`montarFichaSocio`, fonte única), inclusive os em branco ("—"),
+// menos os de `ocultarNaImpressao`,
 // mais a foto de identificação. Aberta pelo botão "Imprimir ficha" da
 // sidebar de SocioDetalhes.vue; mesmo padrão das outras telas de
 // impressão: abre já mandando pra impressão do sistema.
@@ -30,6 +31,16 @@ const loading = ref(true);
 const erro = ref("");
 
 const dataEmissao = formatarData(hojeLocalIso());
+
+/**
+ * Campos da aba Dados que NÃO saem na ficha impressa: dado interno de
+ * cobrança/sistema, sem uso no papel. O plano só sai quando a associação
+ * trabalha com vários planos (no modo "Plano único" é sempre o mesmo texto).
+ */
+function ocultarNaImpressao(rotulo: string): boolean {
+  if (rotulo === "Mensalidade legado" || rotulo === "Cadastrado em") return true;
+  return rotulo === "Plano de mensalidade" && currentMembershipMode.value !== "MULTIPLO";
+}
 
 // Aplica o papel padrão de Configurações → Impressão (`@page`) e só então
 // imprime. Margem maior que a dos relatórios (20 mm): ficha é documento de
@@ -61,7 +72,9 @@ onMounted(async () => {
       pessoa,
       nomePlano: planos.find((plano) => plano.id === dadosSocio.membership_plan_id)?.name ?? null,
       modoMensalidade: currentMembershipMode.value,
-    });
+    })
+      .map((secao) => ({ ...secao, campos: secao.campos.filter((campo) => !ocultarNaImpressao(campo.rotulo)) }))
+      .filter((secao) => secao.campos.length > 0);
   } catch (error) {
     erro.value = `Não foi possível montar a ficha: ${error instanceof Error ? error.message : error}`;
     return;

@@ -80,9 +80,14 @@ export function formatarDataPorExtenso(dataIso: string): string {
   return `${String(dia).padStart(2, "0")} de ${MESES_POR_EXTENSO[mes - 1]} de ${ano}`;
 }
 
-/** Data atual no formato ISO (`"AAAA-MM-DD"`), em UTC. */
+/**
+ * Data atual no formato ISO (`"AAAA-MM-DD"`), no fuso do COMPUTADOR. Antes
+ * era UTC: no Brasil, depois das 21h, pagamentos e estornos saíam com a
+ * data de amanhã (e no último dia do mês caíam no mês seguinte) e a
+ * mensalidade aparecia vencida um dia antes.
+ */
 export function hojeIso(): string {
-  return new Date().toISOString().slice(0, 10);
+  return hojeLocalIso();
 }
 
 /**
@@ -190,11 +195,7 @@ export function formatarDiaPorExtenso(dataIso: string): string {
   return formatadorDiaPorExtenso.format(new Date(`${dataIso}T00:00:00Z`));
 }
 
-/**
- * Data atual no fuso LOCAL do computador (`"AAAA-MM-DD"`). Diferente de
- * `hojeIso` (UTC): usada onde a data precisa bater com o `date(...,
- * 'localtime')` do SQLite, como na tela Atividades.
- */
+/** Data atual no fuso LOCAL do computador (`"AAAA-MM-DD"`) — mesma coisa que `hojeIso`. */
 export function hojeLocalIso(): string {
   const agora = new Date();
   const mes = String(agora.getMonth() + 1).padStart(2, "0");

@@ -11,6 +11,7 @@ import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
 import { formatarData, formatarMoeda } from "../utils/format.js";
+import { codigoDoLancamento } from "../models/CashTransaction.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
@@ -99,20 +100,26 @@ onMounted(async () => {
       <table v-else class="tabela-impressao">
         <thead>
           <tr>
+            <th>Nº</th>
             <th>Data</th>
             <th>Categoria</th>
             <th>Tipo</th>
             <th>Descrição</th>
             <th>Valor</th>
+            <th>Saldo após</th>
           </tr>
         </thead>
         <tbody>
           <tr v-for="movimento in extrato.movimentos" :key="movimento.id">
+            <td class="nao-quebrar">{{ codigoDoLancamento(movimento) }}</td>
             <td class="nao-quebrar">{{ formatarData(movimento.transaction_date) }}</td>
             <td>{{ movimento.category_name || "—" }}</td>
             <td class="nao-quebrar">{{ TIPO_LABEL[movimento.transaction_type] }}</td>
             <td>{{ movimento.description }}</td>
             <td class="nao-quebrar" :class="{ negativo: movimento.signed_amount < 0 }">{{ formatarMoeda(movimento.signed_amount) }}</td>
+            <td class="nao-quebrar" :class="{ negativo: (movimento.saldo_apos ?? 0) < 0 }">
+              {{ formatarMoeda(movimento.saldo_apos ?? 0) }}
+            </td>
           </tr>
         </tbody>
       </table>

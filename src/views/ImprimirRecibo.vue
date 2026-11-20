@@ -4,14 +4,16 @@
 // `MembershipPaymentModel.pagar`, que devolve o pagamento recém-criado
 // pra navegar direto pra cá). Serve tanto pra imprimir de verdade quanto
 // pra só ler os dados na tela e copiar num talão de recibo físico — por
-// isso o valor aparece formatado bem grande, fácil de ler.
+// isso o valor aparece formatado bem grande, fácil de ler. Pagamento de
+// vários meses de uma vez (`pagarVarias`) sai num recibo SÓ, com o valor
+// total e a lista dos meses (`MembershipPaymentModel.recibo`).
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { MembershipPaymentModel, type MembershipPaymentComDetalhes } from "../models/MembershipPayment.js";
+import { MembershipPaymentModel, type ReciboMensalidades } from "../models/MembershipPayment.js";
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { formatarData, formatarMoeda, formatarCompetencia } from "../utils/format.js";
+import { formatarData, formatarMoeda, formatarCompetencia, hojeIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
@@ -19,12 +21,18 @@ const route = useRoute();
 const router = useRouter();
 const paymentId = String(route.params.id);
 
-const pagamento = ref<MembershipPaymentComDetalhes | null>(null);
+const recibo = ref<ReciboMensalidades | null>(null);
+const pagamento = computed(() => recibo.value?.pagamento ?? null);
+const varios = computed(() => (recibo.value?.itens.length ?? 0) > 1);
+const mesesTexto = computed(() => {
+  const meses = recibo.value?.itens.map((item) => formatarCompetencia(item.competence_month)) ?? [];
+  return meses.length > 1 ? `${meses.slice(0, -1).join(", ")} e ${meses[meses.length - 1]}` : (meses[0] ?? "");
+});
 const associacao = ref<Association | null>(null);
 const endereco = ref<Address | null>(null);
 const loading = ref(true);
 
-const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
+const dataEmissao = computed(() => formatarData(hojeIso()));
 
 // Aplica o papel de recibo de Configurações → Impressão (`@page`) e só então imprime.
 const { imprimir } = usePaginaImpressao("RECIBO");
@@ -33,11 +41,11 @@ onMounted(async () => {
   try {
     const associationId = getCurrentAssociationId();
     const [dadosPagamento, dadosAssociacao, dadosEndereco] = await Promise.all([
-      MembershipPaymentModel.get(paymentId),
+      MembershipPaymentModel.recibo(paymentId),
       AssociationModel.get(associationId),
       AddressModel.primaryForAssociation(associationId),
     ]);
-    pagamento.value = dadosPagamento;
+    recibo.value = dadosPagamento;
     associacao.value = dadosAssociacao;
     endereco.value = dadosEndereco;
   } finally {
@@ -53,7 +61,7 @@ onMounted(async () => {
   <section class="content imprimir-recibo">
     <div v-if="loading" class="state-msg">Carregando...</div>
 
-    <template v-else-if="pagamento">
+    <template v-else-if="pagamento && recibo">
       <div class="no-print action-bar">
         <button type="button" class="btn-secondary" @click="router.back()">Voltar</button>
         <button type="button" class="btn-primary" @click="imprimir">Imprimir</button>
@@ -65,19 +73,53 @@ onMounted(async () => {
           <h1>Recibo{{ pagamento.receipt_number ? ` Nº ${pagamento.receipt_number}` : "" }}</h1>
         </header>
 
-        <p class="valor">{{ formatarMoeda(pagamento.paid_amount) }}</p>
+        <p class="valor">{{ formatarMoeda(recibo.total) }}</p>
 
         <p class="corpo">
           Recebemos de <strong>{{ pagamento.full_name }}</strong> (matrícula {{ pagamento.registration_number }})
-          a quantia de <strong>{{ formatarMoeda(pagamento.paid_amount) }}</strong>, referente à mensalidade de
-          <strong>{{ formatarCompetencia(pagamento.competence_month) }}</strong>.
+          a quantia de <strong>{{ formatarMoeda(recibo.total) }}</strong>,
+          <template v-if="varios">
+            referente às <strong>{{ recibo.itens.length }} mensalidades</strong> de <strong>{{ mesesTexto }}</strong>.
+          </template>
+          <template v-else>
+            referente à mensalidade de <strong>{{ mesesTexto }}</strong>.
+          </template>
         </p>
+
+        <table v-if="varios" class="meses">
+          <thead>
+            <tr>
+              <th>Mensalidade</th>
+              <th>Código</th>
+              <th class="col-valor">Valor</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="item in recibo.itens" :key="item.id">
+              <td class="nao-quebrar">{{ formatarCompetencia(item.competence_month) }}</td>
+              <td class="nao-quebrar">{{ item.codigo }}</td>
+              <td class="col-valor nao-quebrar">{{ formatarMoeda(item.paid_amount) }}</td>
+            </tr>
+          </tbody>
+          <tfoot>
+            <tr>
+              <td colspan="2">Total</td>
+              <td class="col-valor nao-quebrar">{{ formatarMoeda(recibo.total) }}</td>
+            </tr>
+          </tfoot>
+        </table>
 
         <dl class="detalhes">
           <dt>Data do pagamento</dt>
           <dd>{{ formatarData(pagamento.paid_at) }}</dd>
           <dt>Forma de pagamento</dt>
           <dd>{{ pagamento.payment_method ?? "—" }}</dd>
+          <template v-if="!varios">
+            <dt>Código da mensalidade</dt>
+            <dd>{{ pagamento.codigo }}</dd>
+          </template>
+          <dt v-if="pagamento.lancamento_codigo">Lançamento no caixa</dt>
+          <dd v-if="pagamento.lancamento_codigo">{{ pagamento.lancamento_codigo }}</dd>
         </dl>
 
         <p class="local-data">Emitido em {{ dataEmissao }}</p>
@@ -161,6 +203,36 @@ onMounted(async () => {
   font-size: 0.95rem;
   line-height: 1.7;
   margin: 0 0 1.5rem;
+}
+
+.meses {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+  margin: 0 0 1.5rem;
+  color: var(--text);
+}
+
+.meses th,
+.meses td {
+  border-bottom: 1px solid var(--border);
+  padding: 0.3rem 0.4rem;
+  text-align: left;
+}
+
+.meses th {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+
+.meses tfoot td {
+  font-weight: 700;
+  border-bottom: none;
+}
+
+.meses .col-valor {
+  text-align: right;
 }
 
 .detalhes {

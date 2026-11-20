@@ -25,6 +25,9 @@ import MembershipBulkPaymentForm from "../modals/MembershipBulkPaymentForm.vue";
 import MembershipAdvancePaymentForm from "../modals/MembershipAdvancePaymentForm.vue";
 import MembershipAgreementForm from "../modals/MembershipAgreementForm.vue";
 import DeclaracaoForm from "../modals/DeclaracaoForm.vue";
+import MembershipResetForm from "../modals/MembershipResetForm.vue";
+import MembershipServicePaymentForm from "../modals/MembershipServicePaymentForm.vue";
+import MembershipServiceDetail from "../modals/MembershipServiceDetail.vue";
 import CarteirinhaPrintForm from "../modals/CarteirinhaPrintForm.vue";
 
 const route = useRoute();
@@ -191,6 +194,49 @@ async function abrirAcordoTodasVencidas() {
   });
 }
 
+/** Quitar mensalidades com prestação de serviço (sem dinheiro no caixa) — ver `MembershipServiceModel`. */
+function abrirPrestacaoServico() {
+  if (!socio.value) return;
+  openModal({
+    title: "Pagar mensalidades com prestação de serviço",
+    component: MembershipServicePaymentForm,
+    props: {
+      memberId: socio.value.id,
+      fullName: socio.value.full_name,
+      onSaved: async () => {
+        await carregarMensalidades();
+        // O PDF do relatório entra na aba Documentos do sócio.
+        documentos.value = await DocumentLinkModel.listForEntity("MEMBER", memberId.value);
+      },
+    },
+  });
+}
+
+function abrirDetalheServico(serviceId: string) {
+  openModal({
+    title: "Prestação de serviço",
+    component: MembershipServiceDetail,
+    props: { serviceId, onSaved: carregarMensalidades },
+  });
+}
+
+/** Reset de todas as mensalidades pagas (pagamentos registrados errado) — justificativa obrigatória. */
+function abrirResetMensalidades() {
+  if (!socio.value) return;
+  openModal({
+    title: "Resetar mensalidades",
+    component: MembershipResetForm,
+    props: {
+      memberId: socio.value.id,
+      fullName: socio.value.full_name,
+      onSaved: () => {
+        parcelasSelecionadas.value = new Set();
+        carregarMensalidades();
+      },
+    },
+  });
+}
+
 async function carregar() {
   loading.value = true;
   try {
@@ -331,7 +377,9 @@ function atualizarSidebar() {
     documentos: [
       { id: "vincular-documento", label: "Vincular documento", icon: "plus", onClick: abrirVincularDocumento },
     ],
-    mensalidades: [],
+    mensalidades: [
+      { id: "resetar-mensalidades", label: "Resetar mensalidades", icon: "alert", onClick: abrirResetMensalidades },
+    ],
     dados: [],
     historico: [],
   };
@@ -464,6 +512,7 @@ onMounted(atualizarSidebar);
         <div v-else-if="abaAtiva === 'mensalidades'" class="mensalidades-tab">
           <div class="plano-row">
             <button type="button" class="btn-secondary" @click="abrirPagamentoAdiantado">Pagar mensalidades adiantadas</button>
+            <button type="button" class="btn-secondary" @click="abrirPrestacaoServico">Pagar com prestação de serviço</button>
           </div>
 
           <div v-if="inadimplente" class="plano-row">
@@ -487,10 +536,11 @@ onMounted(atualizarSidebar);
               <thead>
                 <tr>
                   <th></th>
+                  <th>Código</th>
                   <th>Competência</th>
                   <th>Vencimento</th>
                   <th>Situação</th>
-                  <th>Recibo</th>
+                  <th>Recibo / lançamento</th>
                   <th></th>
                 </tr>
               </thead>
@@ -504,13 +554,30 @@ onMounted(atualizarSidebar);
                       @change="alternarSelecaoParcela(linha.parcela_id)"
                     />
                   </td>
+                  <td class="codigo">{{ linha.codigo }}</td>
                   <td>{{ formatarCompetencia(linha.competence_month) }}</td>
                   <td>{{ formatarData(linha.due_date) }}</td>
                   <td>
                     {{ STATUS_MENSALIDADE_LABEL[linha.status] }}
-                    <span v-if="linha.membership_agreement_id" class="badge">via acordo</span>
+                    <span v-if="linha.membership_agreement_id" class="badge" :title="linha.acordo_codigo ?? undefined">
+                      via acordo{{ linha.acordo_codigo ? ` ${linha.acordo_codigo}` : "" }}
+                    </span>
+                    <button
+                      v-if="linha.membership_service_id"
+                      type="button"
+                      class="badge badge-servico"
+                      title="Ver a prestação de serviço (texto, relatório em PDF, desfazer)"
+                      @click="abrirDetalheServico(linha.membership_service_id)"
+                    >
+                      via serviço{{ linha.servico_codigo ? ` ${linha.servico_codigo}` : "" }}
+                    </button>
                   </td>
-                  <td>{{ linha.receipt_number ?? "—" }}</td>
+                  <td>
+                    {{ linha.receipt_number ?? "—" }}
+                    <span v-if="linha.lancamento_codigo" class="codigo-lancamento" title="Lançamento de caixa que pagou este mês">
+                      {{ linha.lancamento_codigo }}
+                    </span>
+                  </td>
                   <td>
                     <button v-if="linha.status !== 'PAGO'" type="button" class="link-btn" @click="abrirBaixa(linha)">
                       Pagar
@@ -552,6 +619,26 @@ onMounted(atualizarSidebar);
 </template>
 
 <style scoped>
+.badge-servico {
+  border: none;
+  cursor: pointer;
+  font-family: inherit;
+}
+
+.codigo {
+  font-family: ui-monospace, monospace;
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.codigo-lancamento {
+  display: block;
+  font-family: ui-monospace, monospace;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
 .page-header {
   display: flex;
   align-items: center;

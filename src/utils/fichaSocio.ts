@@ -72,7 +72,7 @@ export function montarFichaSocio(dados: {
       titulo: "Registro",
       campos: [
         { rotulo: "Cadastrado em", valor: formatarDataHora(s.created_at) },
-        { rotulo: "Última alteração", valor: formatarDataHora(s.updated_at) },
+        { rotulo: "Última atualização de dados", valor: formatarDataHora(s.updated_at) },
       ],
     },
   ];

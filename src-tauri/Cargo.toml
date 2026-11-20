@@ -1,6 +1,6 @@
 [package]
 name = "gestao_associativa"
-version = "1.2.0"
+version = "1.2.1"
 description = "Gestao associativa"
 authors = ["you"]
 edition = "2021"

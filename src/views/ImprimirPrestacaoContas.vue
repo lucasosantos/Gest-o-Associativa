@@ -6,7 +6,14 @@
 // período pedido).
 import { computed, nextTick, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import { CashTransactionModel, type CashTransactionRelatorio } from "../models/CashTransaction.js";
+import {
+  CashTransactionModel,
+  codigoDoLancamento,
+  saldosApos,
+  totaisDoPeriodo,
+  type CashTransactionRelatorio,
+} from "../models/CashTransaction.js";
+import { MembershipServiceModel, type PrestacaoServicoRelatorio } from "../models/MembershipService.js";
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
@@ -22,6 +29,11 @@ const dataFim = String(route.query.fim ?? "");
 const associacao = ref<Association | null>(null);
 const endereco = ref<Address | null>(null);
 const lancamentos = ref<CashTransactionRelatorio[]>([]);
+/** Saldo somado de todas as contas antes do período — ponto de partida da coluna "Saldo após". */
+const saldoInicial = ref(0);
+/** Mensalidades pagas com prestação de serviço no período — fora do caixa, só informativo. */
+const servicos = ref<PrestacaoServicoRelatorio[]>([]);
+const totalServicos = computed(() => servicos.value.reduce((t, s) => t + s.reference_amount, 0));
 const loading = ref(true);
 const erro = ref("");
 
@@ -33,13 +45,9 @@ const TIPO_LABEL: Record<string, string> = {
   ESTORNO: "Estorno",
 };
 
-const totalEntradas = computed(() =>
-  lancamentos.value.reduce((total, l) => total + (l.signed_amount > 0 ? l.signed_amount : 0), 0)
-);
-const totalSaidas = computed(() =>
-  lancamentos.value.reduce((total, l) => total + (l.signed_amount < 0 ? -l.signed_amount : 0), 0)
-);
-const saldoPeriodo = computed(() => totalEntradas.value - totalSaidas.value);
+const totais = computed(() => totaisDoPeriodo(lancamentos.value));
+const saldos = computed(() => saldosApos(lancamentos.value, saldoInicial.value));
+const saldoFinal = computed(() => saldoInicial.value + lancamentos.value.reduce((t, l) => t + l.signed_amount, 0));
 
 // Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
 const { imprimir } = usePaginaImpressao("PADRAO");
@@ -53,14 +61,18 @@ onMounted(async () => {
 
   try {
     const associationId = getCurrentAssociationId();
-    const [dadosAssociacao, dadosEndereco, lista] = await Promise.all([
+    const [dadosAssociacao, dadosEndereco, lista, saldoAntes, listaServicos] = await Promise.all([
       AssociationModel.get(associationId),
       AddressModel.primaryForAssociation(associationId),
       CashTransactionModel.listarPorPeriodo(dataInicio, dataFim),
+      CashTransactionModel.saldoTotalAntes(dataInicio),
+      MembershipServiceModel.listarPorPeriodo(dataInicio, dataFim),
     ]);
+    servicos.value = listaServicos;
     associacao.value = dadosAssociacao;
     endereco.value = dadosEndereco;
     lancamentos.value = lista;
+    saldoInicial.value = saldoAntes;
   } finally {
     loading.value = false;
   }
@@ -94,16 +106,23 @@ onMounted(async () => {
       <table v-else class="tabela-impressao">
         <thead>
           <tr>
+            <th>Nº</th>
             <th>Data</th>
             <th>Conta</th>
             <th>Categoria</th>
             <th>Tipo</th>
             <th>Descrição</th>
             <th>Valor</th>
+            <th>Saldo após</th>
           </tr>
         </thead>
         <tbody>
-          <tr v-for="lancamento in lancamentos" :key="lancamento.id">
+          <tr class="linha-saldo-inicial">
+            <td colspan="7">Saldo antes do período (todas as contas)</td>
+            <td class="nao-quebrar" :class="{ negativo: saldoInicial < 0 }">{{ formatarMoeda(saldoInicial) }}</td>
+          </tr>
+          <tr v-for="(lancamento, indice) in lancamentos" :key="lancamento.id">
+            <td class="nao-quebrar">{{ codigoDoLancamento(lancamento) }}</td>
             <td class="nao-quebrar">{{ formatarData(lancamento.transaction_date) }}</td>
             <td>{{ lancamento.account_name }}</td>
             <td>{{ lancamento.category_name || "—" }}</td>
@@ -112,18 +131,69 @@ onMounted(async () => {
             <td class="nao-quebrar" :class="{ negativo: lancamento.signed_amount < 0 }">
               {{ formatarMoeda(lancamento.signed_amount) }}
             </td>
+            <td class="nao-quebrar" :class="{ negativo: saldos[indice] < 0 }">{{ formatarMoeda(saldos[indice]) }}</td>
           </tr>
         </tbody>
       </table>
 
       <dl class="totais">
+        <dt>Saldo inicial (todas as contas)</dt>
+        <dd :class="{ negativo: saldoInicial < 0 }">{{ formatarMoeda(saldoInicial) }}</dd>
         <dt>Total de entradas</dt>
-        <dd>{{ formatarMoeda(totalEntradas) }}</dd>
+        <dd>{{ formatarMoeda(totais.entradas) }}</dd>
         <dt>Total de saídas</dt>
-        <dd>{{ formatarMoeda(totalSaidas) }}</dd>
-        <dt>Saldo do período</dt>
-        <dd :class="{ negativo: saldoPeriodo < 0 }">{{ formatarMoeda(saldoPeriodo) }}</dd>
+        <dd>{{ formatarMoeda(totais.saidas) }}</dd>
+        <dt>Resultado do período</dt>
+        <dd :class="{ negativo: totais.saldo < 0 }">{{ formatarMoeda(totais.saldo) }}</dd>
+        <template v-if="totais.transferido > 0">
+          <dt>Transferido entre contas (não é entrada nem saída)</dt>
+          <dd>{{ formatarMoeda(totais.transferido) }}</dd>
+        </template>
+        <dt>Saldo final (todas as contas)</dt>
+        <dd :class="{ negativo: saldoFinal < 0 }">{{ formatarMoeda(saldoFinal) }}</dd>
+        <template v-if="servicos.length > 0">
+          <dt>Mensalidades pagas com serviço (fora do caixa)</dt>
+          <dd>{{ formatarMoeda(totalServicos) }}</dd>
+        </template>
       </dl>
+
+      <template v-if="servicos.length > 0">
+        <h2 class="titulo-secao">Mensalidades pagas com prestação de serviço</h2>
+        <p class="nota-secao">
+          Não houve entrada de dinheiro — o valor é o que o serviço equivale (meses × mensalidade) e não soma no saldo.
+        </p>
+        <table class="tabela-impressao">
+          <thead>
+            <tr>
+              <th>Código</th>
+              <th>Data</th>
+              <th>Sócio</th>
+              <th>Serviço prestado</th>
+              <th>Meses</th>
+              <th>Mensalidade</th>
+              <th>Valor do serviço</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="servico in servicos" :key="servico.id">
+              <td class="nao-quebrar">{{ servico.codigo }}</td>
+              <td class="nao-quebrar">{{ formatarData(servico.service_date) }}</td>
+              <td>{{ servico.full_name }}</td>
+              <td>
+                {{ servico.description }}
+                <span v-if="servico.approved_by" class="aprovado">Aprovado por {{ servico.approved_by }}</span>
+              </td>
+              <td class="nao-quebrar">{{ servico.months_count }}</td>
+              <td class="nao-quebrar">{{ formatarMoeda(servico.valor_mensal) }}</td>
+              <td class="nao-quebrar">{{ formatarMoeda(servico.reference_amount) }}</td>
+            </tr>
+            <tr class="linha-total-servicos">
+              <td colspan="6">Total em serviços ({{ servicos.reduce((t, s) => t + s.months_count, 0) }} mês(es))</td>
+              <td class="nao-quebrar">{{ formatarMoeda(totalServicos) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </template>
 
       <div class="assinatura">
         <div class="linha-assinatura"></div>
@@ -134,6 +204,32 @@ onMounted(async () => {
 </template>
 
 <style scoped>
+.linha-saldo-inicial td {
+  font-style: italic;
+}
+
+.titulo-secao {
+  margin: 0 0 0.3rem;
+  font-size: 0.95rem;
+  color: var(--text);
+}
+
+.nota-secao {
+  margin: 0 0 0.6rem;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+}
+
+.aprovado {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.linha-total-servicos td {
+  font-weight: 600;
+}
+
 .imprimir-prestacao {
   max-width: 100%;
 }

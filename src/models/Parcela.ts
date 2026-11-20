@@ -77,17 +77,19 @@ export class ParcelaModel {
     const mesAtual = competenciaAtual();
     const associationId = getCurrentAssociationId();
 
-    const [{ max_competencia: maxCompetencia }] = await (await getDatabase()).select<
-      { max_competencia: string | null }[]
-    >("SELECT MAX(competence_month) AS max_competencia FROM parcelas WHERE association_id = $1", [associationId]);
+    const existentes = await (await getDatabase()).select<{ competence_month: string }[]>(
+      "SELECT competence_month FROM parcelas WHERE association_id = $1 ORDER BY competence_month",
+      [associationId]
+    );
+    const jaTem = new Set(existentes.map((p) => p.competence_month));
 
-    // Já está em dia — caminho rápido, sem varrer nada.
-    if (maxCompetencia && maxCompetencia >= mesAtual) return;
-
-    const marco = maxCompetencia ? proximaCompetencia(maxCompetencia) : await marcoInicial();
-
+    // Percorre do 1º mês do calendário até o atual criando os que faltam.
+    // Não basta olhar o MAIOR mês: pagamento adiantado cria meses futuros
+    // (ex.: jan–mar do ano que vem), e o mês atual ficava sem parcela —
+    // ninguém devia aquele mês e ele nem aparecia em Cobranças.
+    const marco = existentes[0]?.competence_month ?? (await marcoInicial());
     for (let competencia = marco; competencia <= mesAtual; competencia = proximaCompetencia(competencia)) {
-      await ParcelaModel.getOrCreate(competencia);
+      if (!jaTem.has(competencia)) await ParcelaModel.getOrCreate(competencia);
     }
   }
 }

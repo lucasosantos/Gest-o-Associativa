@@ -72,20 +72,26 @@ export class DonationModel {
 
         const db = await getDatabase();
         const id = newId();
-        await db.execute(
-          `INSERT INTO donations (id, association_id, donor_id, amount, donation_date, donation_type, purpose, cash_transaction_id)
-           VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
-          [
-            id,
-            associationId,
-            doador.id,
-            dados.amount,
-            dados.donation_date,
-            dados.donation_type ?? null,
-            dados.purpose ?? null,
-            transacao.id,
-          ]
-        );
+        try {
+          await db.execute(
+            `INSERT INTO donations (id, association_id, donor_id, amount, donation_date, donation_type, purpose, cash_transaction_id)
+             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              id,
+              associationId,
+              doador.id,
+              dados.amount,
+              dados.donation_date,
+              dados.donation_type ?? null,
+              dados.purpose ?? null,
+              transacao.id,
+            ]
+          );
+        } catch (erro) {
+          // Sem a doação, a receita ficaria sozinha no caixa — desfaz.
+          await CashTransactionModel.descartarCriadoComErro(transacao.id).catch(() => undefined);
+          throw erro;
+        }
 
         // Referencia a doação de volta na transação, para navegação nos dois sentidos.
         await db.execute("UPDATE cash_transactions SET source_id = $2 WHERE id = $1", [transacao.id, id]);

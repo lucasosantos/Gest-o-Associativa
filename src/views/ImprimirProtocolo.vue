@@ -11,7 +11,7 @@ import { ProtocolEntryModel, formatarNumeroProtocolo, type ProtocolEntryComLivro
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { formatarData } from "../utils/format.js";
+import { formatarData, hojeIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
@@ -38,7 +38,7 @@ const STATUS_LABEL: Record<string, string> = {
   CANCELADO: "Cancelado",
 };
 
-const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
+const dataEmissao = computed(() => formatarData(hojeIso()));
 
 const rotuloContraparte = computed(() => (protocolo.value?.direction === "RECEBIDO" ? "Remetente" : "Destinatário"));
 const contraparte = computed(() => {

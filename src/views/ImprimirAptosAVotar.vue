@@ -10,7 +10,7 @@ import { MemberModel, type MemberComPessoa } from "../models/Member.js";
 import { AssociationModel, type Association } from "../models/Association.js";
 import { AddressModel, type Address } from "../models/Address.js";
 import { getCurrentAssociationId } from "../composables/useCurrentAssociation.js";
-import { formatarData, formatarCpf } from "../utils/format.js";
+import { formatarData, formatarCpf, hojeIso } from "../utils/format.js";
 import PrintHeader from "../components/PrintHeader.vue";
 import { usePaginaImpressao } from "../composables/usePaginaImpressao.js";
 
@@ -22,7 +22,7 @@ const aptos = ref<MemberComPessoa[]>([]);
 const carenciaMeses = ref(0);
 const loading = ref(true);
 
-const dataEmissao = computed(() => formatarData(new Date().toISOString().slice(0, 10)));
+const dataEmissao = computed(() => formatarData(hojeIso()));
 
 // Aplica o papel padrão de Configurações → Impressão (`@page`) e só então imprime.
 const { imprimir } = usePaginaImpressao("PADRAO");

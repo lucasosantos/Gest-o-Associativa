@@ -12,7 +12,7 @@ opcional). Domínio e decisões: [.claude/docs/dominio-associacoes.md](.claude/d
 
 - Tauri v2 + Vue 3 (Composition API, `<script setup>`) + TypeScript + Vite
 - Backend nativo em Rust: [src-tauri/src/](src-tauri/src/)
-- Banco: SQLite via `tauri-plugin-sql` (migrations em [lib.rs](src-tauri/src/lib.rs), hoje até `version: 24`)
+- Banco: SQLite via `tauri-plugin-sql` (migrations em [lib.rs](src-tauri/src/lib.rs), hoje até `version: 26`)
 - Gerenciador de dependências: npm
 
 ## Comandos
@@ -88,7 +88,22 @@ Versão do app: mesmo número em `package.json`, `src-tauri/tauri.conf.json` e
 - Dinheiro em centavos (`INTEGER`), datas `TEXT` ISO (`AAAA-MM-DD`), `created_at` em UTC
   (converter pra hora local na tela — ver `formatarDataHora`).
 - Registro não se apaga quando tem história: sócio é desligado, lançamento é estornado,
-  bem recebe baixa.
+  bem recebe baixa. Única exceção: lançamento **já estornado** pode ser apagado de vez
+  (`CashTransactionModel.apagarEstornado` — some o par lançamento + estorno, com motivo
+  obrigatório registrado em Atividades; bloqueado se for pagamento de mensalidade, conta,
+  doação ou evento de patrimônio).
+- Estorno sempre desfaz o que o lançamento quitava (mensalidades/acordo, parcela de conta,
+  doação, vínculo de patrimônio); transferência estorna as duas pernas juntas.
+- Sem transação SQL (o plugin usa pool): ação que grava em várias tabelas checa tudo antes
+  e, se um passo falha, desfaz o que já gravou (ver `desfazerBaixaParcial`,
+  `CashTransactionModel.descartarCriadoComErro`). Todo INSERT de lançamento passa por
+  `inserirLancamento` (numeração).
+- Códigos legíveis (`src/utils/codigos.ts`): mensalidade `01-0012-03-2026`, acordo
+  `01-0012-AC-0001`, prestação de serviço `01-0012-PS-0001`, lançamento `01-L-2026-000123`
+  (`01` = `associations.numero`).
+- Mensalidade paga com prestação de serviço (`MembershipServiceModel`) NÃO tem lançamento
+  de caixa: `membership_payments.membership_service_id` preenchido e `cash_transaction_id` NULL.
+- "Hoje" é sempre a data local (`hojeIso()`), nunca `toISOString().slice(0, 10)`.
 - Regras específicas por área ficam em `.claude/rules/`:
   [frontend.md](.claude/rules/frontend.md) ·
   [backend.md](.claude/rules/backend.md) ·

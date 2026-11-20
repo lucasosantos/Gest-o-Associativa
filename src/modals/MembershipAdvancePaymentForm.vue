@@ -8,7 +8,10 @@
 // (`ParcelaModel.getOrCreate`) na hora de pagar. Aceita um desconto no valor
 // TOTAL do lote (ex.: incentivo por antecipar o pagamento), rateado
 // igualmente entre os meses (resto de centavos fica no último) pra virar o
-// `amount` de cada pagamento (`MembershipPaymentModel.pagar`).
+// `amount` de cada mês. Grava com `MembershipPaymentModel.pagarVarias`: UM
+// lançamento no caixa com o total (como o acordo), cada mês com seu
+// pagamento (todos no mesmo recibo); tudo ou nada se algum mês já estiver pago.
+import { useRouter } from "vue-router";
 import { computed, onMounted, ref } from "vue";
 import { MembershipPaymentModel } from "../models/MembershipPayment.js";
 import { ParcelaModel } from "../models/Parcela.js";
@@ -33,6 +36,7 @@ const props = defineProps<{
   fullName: string;
   onSaved?: () => void;
 }>();
+const router = useRouter();
 
 /** Mês mais cedo que conta como "adiantado" — o atual já tem seu jeito normal de pagar (linha ABERTO da tabela). */
 const competenciaMinima = proximaCompetencia(competenciaAtual());
@@ -52,7 +56,6 @@ const formasPagamento = ref<PaymentMethod[]>([]);
 const livrosRecibo = ref<ProtocolBook[]>([]);
 const loading = ref(true);
 const saving = ref(false);
-const pagas = ref(0);
 const erro = ref("");
 
 /** Competências que serão geradas/pagas, em ordem — ex.: 3 meses a partir de out/2026 → out, nov, dez/2026. */
@@ -134,37 +137,38 @@ async function handleSubmit() {
 
   const formaEscolhida = formasPagamento.value.find((f) => f.id === paymentMethodId.value);
   const valores = valoresPorCompetencia.value;
+  // Checa antes de criar os meses futuros no calendário (não deixa mês criado à toa).
+  if (valores.some((valor) => valor <= 0)) {
+    erro.value = "Cada mês precisa ficar com valor maior que zero — diminua o desconto.";
+    return;
+  }
 
   saving.value = true;
   erro.value = "";
-  pagas.value = 0;
-  const falhas: string[] = [];
+  try {
+    // Parcelas dos meses futuros ainda não existem no calendário — cria antes (criar parcela vazia não paga nada).
+    const parcelas = [];
+    for (const competencia of competencias.value) parcelas.push(await ParcelaModel.getOrCreate(competencia));
 
-  for (let i = 0; i < competencias.value.length; i++) {
-    const competencia = competencias.value[i];
-    try {
-      const parcela = await ParcelaModel.getOrCreate(competencia);
-      await MembershipPaymentModel.pagar(props.memberId, parcela.id, {
+    const { primeiroPagamentoId } = await MembershipPaymentModel.pagarVarias(
+      props.memberId,
+      parcelas.map((parcela, i) => ({ parcela_id: parcela.id, amount: valores[i] })),
+      {
         financial_account_id: financialAccountId.value,
         payment_date: paymentDate.value,
-        amount: valores[i],
         payment_method_id: paymentMethodId.value || null,
         payment_method_label: formaEscolhida?.name ?? null,
         protocol_book_id: protocolBookId.value || null,
-      });
-      pagas.value++;
-    } catch (error) {
-      falhas.push(`${formatarCompetencia(competencia)}: ${error instanceof Error ? error.message : error}`);
-    }
-  }
-
-  saving.value = false;
-  props.onSaved?.();
-
-  if (falhas.length === 0) {
+      }
+    );
+    props.onSaved?.();
     closeModal();
-  } else {
-    erro.value = `Pagas ${pagas.value} de ${competencias.value.length} mensalidade(s). Falhou: ${falhas.join("; ")}`;
+    // Um recibo só, com todos os meses e o valor total — abre pra imprimir/enviar.
+    router.push({ name: "recibo-imprimir", params: { id: primeiroPagamentoId } });
+  } catch (error) {
+    erro.value = `Não foi possível registrar o pagamento: ${error instanceof Error ? error.message : error}`;
+  } finally {
+    saving.value = false;
   }
 }
 </script>
@@ -260,14 +264,14 @@ async function handleSubmit() {
         <p v-if="livrosRecibo.length === 0" class="field-hint">
           Nenhum livro do tipo RECIBO cadastrado — crie um em Documentos › Protocolos › Livros pra numerar os recibos automaticamente.
         </p>
-        <p v-else class="field-hint">Um recibo numerado é gerado pra CADA mensalidade, em sequência.</p>
+        <p v-else class="field-hint">Gera UM recibo numerado com todos os meses e o valor total.</p>
       </div>
 
       <div class="save-row">
         <button type="button" class="btn-secondary" :disabled="saving" @click="closeModal">Cancelar</button>
         <button type="submit" class="btn-primary" :disabled="saving">
           <Spinner v-if="saving" />
-          {{ saving ? `Pagando ${pagas + 1}/${competencias.length}...` : "Confirmar pagamentos" }}
+          {{ saving ? "Registrando..." : "Confirmar pagamentos" }}
         </button>
       </div>
     </template>
